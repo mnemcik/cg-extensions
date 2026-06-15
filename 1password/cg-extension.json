@@ -1,0 +1,14 @@
+{
+  "manifest": 1,
+  "name": "1password",
+  "version": "0.1.0",
+  "description": "1Password as authoritative credential store",
+  "contributes": {
+    "claude-md-sections": [
+      { "id": "credentials-1password", "path": "fragments/credentials-1password.md" }
+    ],
+    "notes": [
+      { "src": "notes/credentials-1password-policy.md", "dest": "notes/credentials-1password-policy.md" }
+    ]
+  }
+}

@@ -1,0 +1,63 @@
+name: validate
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  manifests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - run: pip install jsonschema
+      - name: Validate every */cg-extension.json against the canonical schema
+        run: |
+          python - <<'PY'
+          import json, glob, os, sys, urllib.request
+          from jsonschema import Draft202012Validator
+
+          SCHEMA_URL = "https://raw.githubusercontent.com/mnemcik/cg-extensions-registry/main/schema/cg-extension.schema.json"
+          schema = json.load(urllib.request.urlopen(SCHEMA_URL))
+          validator = Draft202012Validator(schema)
+
+          manifests = sorted(glob.glob("*/cg-extension.json"))
+          if not manifests:
+              print("no extensions found (expected <name>/cg-extension.json)", file=sys.stderr)
+              sys.exit(1)
+
+          failed = False
+          for mf in manifests:
+              base = os.path.dirname(mf)
+              manifest = json.load(open(mf))
+              errs = sorted(validator.iter_errors(manifest), key=str)
+              if errs:
+                  failed = True
+                  for e in errs:
+                      print(f"{mf}: {e.message}", file=sys.stderr)
+                  continue
+
+              # The manifest's own name must match its subdir (so registry path
+              # resolution and the install name agree).
+              if manifest["name"] != base:
+                  failed = True
+                  print(f"{mf}: name {manifest['name']!r} must match subdir {base!r}", file=sys.stderr)
+
+              # Every referenced payload file must exist, resolved within the subdir.
+              c = manifest.get("contributes", {})
+              refs = [s["path"] for s in c.get("claude-md-sections", [])]
+              refs += [s["src"] for s in c.get("notes", [])]
+              refs += [s["src"] for s in c.get("templates", [])]
+              refs += [h["wrapper"] for h in c.get("hooks", [])]
+              for rel in refs:
+                  if not os.path.isfile(os.path.join(base, rel)):
+                      failed = True
+                      print(f"{mf}: referenced file missing: {rel}", file=sys.stderr)
+
+              if not failed:
+                  print(f"{mf}: valid (v{manifest['manifest']}, {manifest['name']} {manifest['version']})")
+
+          sys.exit(1 if failed else 0)
+          PY
