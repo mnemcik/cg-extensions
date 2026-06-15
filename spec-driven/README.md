@@ -13,7 +13,7 @@ into sessions that don't need it.
 ## Install
 
 ```sh
-cg extension install spec-driven
+cg extension install cg/spec-driven   # fully-qualified: <registry>/<extension>, requires cg v1.6.0+
 # or, without the registry (this extension is a subdir of the monorepo):
 cg extension install https://github.com/mnemcik/cg-extensions --path spec-driven
 ```

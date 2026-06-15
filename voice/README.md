@@ -11,7 +11,7 @@ the voice content is yours and stays in your workspace.
 ## Install
 
 ```sh
-cg extension install voice
+cg extension install cg/voice   # fully-qualified: <registry>/<extension>, requires cg v1.6.0+
 # or, without the registry (this extension is a subdir of the monorepo):
 cg extension install https://github.com/mnemcik/cg-extensions --path voice
 ```
