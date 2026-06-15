@@ -1,0 +1,14 @@
+{
+  "manifest": 1,
+  "name": "voice",
+  "version": "0.1.0",
+  "description": "Draft outbound messages in the user's own voice — loads a VOICE.md style guide before writing",
+  "contributes": {
+    "claude-md-sections": [
+      { "id": "voice-trigger", "path": "fragments/voice-trigger.md" }
+    ],
+    "templates": [
+      { "src": "templates/VOICE.md", "dest": "templates/VOICE.md" }
+    ]
+  }
+}
