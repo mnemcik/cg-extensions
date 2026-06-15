@@ -1,0 +1,14 @@
+{
+  "manifest": 1,
+  "name": "spec-driven",
+  "version": "0.1.0",
+  "description": "Spec-driven development workflow for greenfield software builds (PRD → specs → milestone implementation)",
+  "contributes": {
+    "claude-md-sections": [
+      { "id": "spec-driven-development", "path": "fragments/spec-driven-development.md" }
+    ],
+    "notes": [
+      { "src": "notes/spec-driven-development.md", "dest": "notes/spec-driven-development.md" }
+    ]
+  }
+}
