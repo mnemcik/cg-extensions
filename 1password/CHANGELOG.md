@@ -22,6 +22,3 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     mechanics (JIT `op` retrieval, `op://` referencing + syntax limits, the
     Claude-Code-`op://`-resolution gotcha, alternatives, item creation, and
     1Password SSH-agent git auth).
-
-[Unreleased]: https://github.com/mnemcik/cg-ext-1password/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/mnemcik/cg-ext-1password/releases/tag/v0.1.0
