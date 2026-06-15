@@ -1,6 +1,6 @@
 # Credentials & Secrets — 1Password in the Loop
 
-> Shipped by the [`1password`](https://github.com/mnemcik/cg-ext-1password) Consigliere extension. Edit the source there, not this copy — `cg extension update 1password` overwrites it.
+> Shipped by the [`1password`](https://github.com/mnemcik/cg-extensions/tree/main/1password) Consigliere extension. Edit the source there, not this copy — `cg extension update 1password` overwrites it.
 
 ## When to load this note
 
