@@ -11,7 +11,7 @@ ask the user to create vault items rather than guessing.
 ## Install
 
 ```sh
-cg extension install 1password
+cg extension install cg/1password   # fully-qualified: <registry>/<extension>, requires cg v1.6.0+
 # or, without the registry (this extension is a subdir of the monorepo):
 cg extension install https://github.com/mnemcik/cg-extensions --path 1password
 ```
