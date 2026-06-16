@@ -12,6 +12,7 @@ independently.
 | [`1password`](1password/) | Makes 1Password the authoritative credential store — `op://` referencing, just-in-time `op` retrieval, item-creation requests, 1Password SSH-agent git auth. |
 | [`spec-driven`](spec-driven/) | Spec-driven development workflow for greenfield software builds — PRD → layered specs → milestone implementation, gated to exclude brownfield/research/analysis/doc work. |
 | [`voice`](voice/) | Drafts outbound messages (Slack, email, Jira, PR) in your own voice by loading a personal `VOICE.md` style guide; ships a skeleton, not anyone's content. |
+| [`gmail-digest`](gmail-digest/) | Turns "check / digest X updates" into a structured digest of unread Gmail for a label, with per-target tracking; ships the trigger rule + workflow + a target template (requires a Gmail MCP). |
 
 ## Install
 
