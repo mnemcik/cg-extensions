@@ -13,6 +13,7 @@ independently.
 | [`spec-driven`](spec-driven/) | Spec-driven development workflow for greenfield software builds — PRD → layered specs → milestone implementation, gated to exclude brownfield/research/analysis/doc work. |
 | [`voice`](voice/) | Drafts outbound messages (Slack, email, Jira, PR) in your own voice by loading a personal `VOICE.md` style guide; ships a skeleton, not anyone's content. |
 | [`gmail-digest`](gmail-digest/) | Turns "check / digest X updates" into a structured digest of unread Gmail for a label, with per-target tracking; ships the trigger rule + workflow + a target template (requires a Gmail MCP). |
+| [`gh-account-resolver`](gh-account-resolver/) | Per-command `gh` account routing — a `PreToolUse` hook picks the right logged-in `gh` account per Bash command (via `.claude/gh-account-map`) so parallel sessions don't fight over global `gh` auth state. Fails open; zero global footprint. |
 
 ## Install
 

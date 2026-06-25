@@ -1,0 +1,14 @@
+{
+  "manifest": 1,
+  "name": "gh-account-resolver",
+  "version": "0.1.0",
+  "description": "Per-command gh account routing — selects the correct logged-in gh account per Bash command so parallel Claude sessions don't fight over global gh auth state",
+  "contributes": {
+    "claude-md-sections": [
+      { "id": "gh-account-routing", "path": "fragments/gh-account-routing.md" }
+    ],
+    "hooks": [
+      { "event": "PreToolUse", "wrapper": "hooks/resolve.sh", "command": "gh-account-resolver" }
+    ]
+  }
+}
