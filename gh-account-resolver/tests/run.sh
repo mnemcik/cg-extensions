@@ -35,6 +35,7 @@ if [ -n "${GH_TOKEN:-}" ]; then acct="${GH_TOKEN#tok-}"; else acct=default; fi
 case "${1:-}" in
   stdin) IFS= read -r l; echo "acct=$acct stdin=$l" ;;
   exit) echo "acct=$acct"; exit "${2:-0}" ;;
+  nest) if [ "${2:-0}" -gt 0 ]; then gh nest $((${2} - 1)); else echo "acct=$acct"; fi ;;
   *) echo "acct=$acct" ;;
 esac
 EOF
@@ -71,10 +72,14 @@ mkrepo() {   # mkrepo DIR [remote url]...
 }
 mkrepo "$T/r/work" origin git@github.com:work-org/a.git
 mkrepo "$T/r/pers" origin https://github.com/mine/b.git
+mkrepo "$T/r/workhttps" origin https://github.com/work-org/e.git
+mkrepo "$T/r/resolved" origin https://github.com/mine/f.git
+git -C "$T/r/resolved" config remote.origin.gh-resolved work-org/f
 mkrepo "$T/r/fork" origin https://github.com/mine/c.git upstream ssh://git@github-work/work-org/c.git
 mkrepo "$T/r/alias" origin git@github-work:work-org/d.git
 mkrepo "$T/r/none"
-mkdir -p "$T/r/plain"
+mkdir -p "$T/r/plain" "$T/r/glob"
+: >"$T/r/glob/org:work-org"   # a glob-expanded `*` would read as a qualifier
 
 BASEPATH="$T/realbin:/usr/bin:/bin"
 
@@ -150,6 +155,8 @@ for SH in "${shells[@]}"; do
   check "cwd ssh remote"        "$W" "acct=work"    "gh pr list"
   check "cwd host alias"        "$T/r/alias" "acct=work" "gh pr list"
   check "cwd https remote"      "$M" "acct=default" "gh pr list"
+  check "cwd https remote, work" "$T/r/workhttps" "acct=work" "gh pr list"
+  check "gh-resolved OWNER/REPO" "$T/r/resolved" "acct=work" "gh pr list"
   check "fork: upstream wins"   "$T/r/fork" "acct=work" "gh pr list"
   check "no remote"             "$T/r/none" "acct=default" "gh pr list"
   check "not a repo"            "$T/r/plain" "acct=default" "gh pr list"
@@ -169,6 +176,34 @@ for SH in "${shells[@]}"; do
   check "URL in --body"         "$M" "acct=default" "gh issue comment 5 --body https://github.com/work-org/x/issues/1"
   check "URL in -b"             "$M" "acct=default" "gh pr create -t t -b https://github.com/work-org/x"
   check "URL in -f"             "$M" "acct=default" "gh api repos/mine/b/issues -f body=https://github.com/work-org/x"
+
+  # --- values of other flags are not owners either (code review of #7)
+  check "URL in -c"             "$M" "acct=default" "gh pr close 5 -c https://github.com/work-org/x/pull/3"
+  check "URL in --subject"      "$M" "acct=default" "gh pr merge 5 --squash --subject https://github.com/work-org/x/issues/1"
+  check "URL in --homepage"     "$M" "acct=default" "gh repo edit --homepage https://github.com/work-org/site"
+  check "create, homepage URL"  "$M" "acct=default" "gh repo create --homepage https://github.com/work-org/site mine/new"
+  check "flag value before repo" "$W" "acct=default" "gh repo edit -d 'new description' mine/b"
+  check "topic before repo"     "$W" "acct=default" "gh repo edit --add-topic foo mine/b"
+  check "branch before repo"    "$W" "acct=default" "gh repo sync --branch main mine/b"
+  check "create, desc first"    "$M" "acct=work"    "gh repo create -d 'a description' work-org/new"
+  check "create, gitignore first" "$M" "acct=work"  "gh repo create --gitignore Node work-org/new"
+  check "view, --json first"    "$M" "acct=work"    "gh repo view --json name work-org/a"
+  check "clone, -u first"       "$M" "acct=work"    "gh repo clone -u up work-org/a"
+  check "fork --org"            "$M" "acct=work"    "gh repo fork mine/b --org work-org"
+  check "api body qualifier"    "$M" "acct=default" "gh api 'repos/{owner}/{repo}/issues/1/comments' -f body='moved to org:work-org'"
+  check "api header qualifier"  "$M" "acct=default" "gh api user -H 'X: owner:work-org'"
+  check "api ?q= qualifier"     "$M" "acct=work"    "gh api 'search/issues?q=is%3Aopen+org%3Awork-org'"
+  check "graphql query text"    "$M" "acct=default" "gh api graphql -f query='# see org:work-org
+{ viewer { login } }'"
+  check "search '*' no glob"    "$T/r/glob" "acct=default" "gh search repos '*'"
+
+  # --- user-scoped commands use the default account
+  check "gist create"           "$W" "acct=default" "gh gist create f.txt"
+  check "repo list, no owner"   "$W" "acct=default" "gh repo list"
+  check "repo create --source"  "$W" "acct=default" "gh repo create --source=. --private"
+
+  # --- gh calling gh (aliases, extensions) is not a loop
+  check "nested gh calls"       "$W" "acct=work"    "gh nest 4"
 
   # --- bare names mean the logged-in user
   check "repo create bare"      "$W" "acct=default" "gh repo create newthing --private"
@@ -190,9 +225,12 @@ for SH in "${shells[@]}"; do
   check "set -e, no remote"     "$T/r/none" "acct=default after" "set -e; gh pr list; echo after"
   check "set -x"                "$M" "acct=work"    "set -x; gh pr list -R work-org/a"
   ok "set -x leaks no token" eval '! grep -q "tok-work" "$T/stderr"'
-  check "SHELLOPTS xtrace"      "$M" "acct=work"    "set -x; export SHELLOPTS 2>/dev/null; gh pr list -R work-org/a"
-  ok "SHELLOPTS leaks no token" eval '! grep -q "tok-work" "$T/stderr"'
 done
+
+# SHELLOPTS only exists in bash.
+SH=bash
+check "SHELLOPTS xtrace"       "$M" "acct=work"    "set -x; export SHELLOPTS; gh pr list -R work-org/a"
+ok "SHELLOPTS leaks no token" eval '! grep -q "tok-work" "$T/stderr"'
 
 SH=bash
 
@@ -230,6 +268,16 @@ P2="$T/proj2"
 make_project "$P2"
 install "$P2" "$T/env2"
 check "two resolvers on PATH"  "$M" "acct=work" ". '$T/env2'; gh pr list -R work-org/a"
+
+# --- two resolver copies outside the resolver bin dirs, each pointing at the
+#     other first: only the identity guard stops them exec-ing each other.
+P4="$T/proj4"; make_project "$P4"
+mkdir -p "$T/u1" "$T/u2"
+ln -s "$P2/.claude/hooks/gh-account-resolver-resolve.sh" "$T/u1/gh"
+ln -s "$P4/.claude/hooks/gh-account-resolver-resolve.sh" "$T/u2/gh"
+out=$(cd "$W" && env -i HOME="$HOME" PATH="$T/u1:$T/u2:$BASEPATH" \
+  perl -e 'alarm 10; exec @ARGV' "$T/u1/gh" pr list -R work-org/a 2>&1)
+ok "identity loop guard" [ "$out" = "acct=work" ]
 
 # --- removal: a dangling symlink falls back to the real gh
 P3="$T/proj3"

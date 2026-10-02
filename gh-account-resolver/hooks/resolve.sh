@@ -88,16 +88,20 @@ fi
 
 # ------------------------------------------------------------ route role
 
-# Backstop against exec loops between resolver copies.
-hops="${GH_ACCOUNT_RESOLVER_HOPS:-0}"
-case "$hops" in *[!0-9]*|'') hops=0 ;; esac
-export GH_ACCOUNT_RESOLVER_HOPS=$((hops + 1))
+# No globbing: the loops below split unquoted words, and a `*` in a search
+# query must not expand to the files in the current directory.
+set -f
 
 my_real=$(realpath_of "$self")
 
-# Find the real gh: the first `gh` on PATH that is neither this script nor in
-# any resolver bin dir (another workspace's copy on PATH would otherwise exec
-# back here, forever).
+# Loop guard by identity, not depth. Every resolver copy that runs adds its
+# own path to GH_ACCOUNT_RESOLVER_SEEN and skips every path already listed, so
+# two copies can never exec each other in a circle. A legitimate nested call
+# (a gh alias, extension or git hook that runs gh again) still works.
+seen="${GH_ACCOUNT_RESOLVER_SEEN:-}"
+export GH_ACCOUNT_RESOLVER_SEEN="$seen:$my_real"
+
+# Find the real gh: the first `gh` on PATH that is not a resolver copy.
 real_gh=""
 oldifs=$IFS
 IFS=:
@@ -106,16 +110,15 @@ for d in $PATH; do
   case "$d" in */.claude/gh-account-resolver/bin|*/.claude/gh-account-resolver/bin/) continue ;; esac
   c="$d/gh"
   [ -f "$c" ] && [ -x "$c" ] || continue
-  if [ -L "$c" ]; then
-    r=$(realpath_of "$c")
-    [ "$r" = "$my_real" ] && continue
-  fi
+  if [ -L "$c" ]; then r=$(realpath_of "$c"); else r="$c"; fi
+  [ "$r" = "$my_real" ] && continue
+  case ":$seen:" in *":$r:"*) continue ;; esac
   real_gh="$c"
   break
 done
 IFS=$oldifs
 
-if [ -z "$real_gh" ] || [ "$hops" -ge 3 ]; then
+if [ -z "$real_gh" ]; then
   echo "gh-account-resolver: cannot find the real gh on PATH" >&2
   exit 127
 fi
@@ -123,12 +126,13 @@ fi
 passthru() { exec "$real_gh" "$@"; }
 
 # Explicit pins and commands that don't act on a repo pass straight through.
-# (`GH_TOKEN=x gh auth status` would report only the injected token.)
+# (`GH_TOKEN=x gh auth status` would report only the injected token.) Gists
+# always belong to the logged-in user.
 [ -n "${GH_TOKEN:-}" ] && passthru "$@"
 [ -n "${GITHUB_TOKEN:-}" ] && passthru "$@"
 [ $# -eq 0 ] && passthru "$@"
 case "$1" in
-  auth|config|alias|extension|extensions|ext|help|version|completion|--version|--help|-h)
+  auth|config|alias|extension|extensions|ext|help|version|completion|gist|--version|--help|-h)
     passthru "$@" ;;
 esac
 
@@ -142,19 +146,48 @@ for cand in "$linkdir/../../gh-account-map" "${my_real%/*}/../gh-account-map"; d
 done
 [ -n "$map" ] || passthru "$@"
 
-# Flags whose value is free text, a file or a branch, never a repo. Their
-# values are never mined for an owner: a URL inside --body once routed a
-# comment to the wrong account.
-is_text_flag() {
+# Flags known to take no value. Any other flag written as `--flag value` is
+# assumed to take one, and that value is never read as a positional: flag
+# values are free text, file paths, branches or labels (`--body <url>`,
+# `--add-label kind/bug`), and reading them once routed a write to the wrong
+# account. An unknown boolean flag only costs the next positional, which then
+# falls back to the current directory.
+is_bool_flag() {
   case "$1" in
-    -b|--body|-t|--title|-m|--message|-n|--notes|--notes-file|--comment|-q|--jq|\
-    --template|-T|-F|--body-file|-f|--field|--raw-field|-H|--header|--input|\
-    -l|--label|--add-label|--remove-label|-B|--base|--head|-a|--assignee|\
-    --milestone)
+    -w|--web|-y|--yes|--force|--confirm|-s|--squash|--merge|-r|--rebase|--admin|--auto|\
+    --delete-branch|--draft|--fill|--fill-first|--fill-verbose|--public|--private|\
+    --internal|--clone|--remote|--no-clone|--archived|--comments|--exit-status|\
+    --watch|--required|--fail-fast|--undo|--include-all-branches|--disable-issues|\
+    --disable-wiki|--push|--paginate|--slurp|-i|--include|--silent|--verbose|\
+    --no-maintainer-edit|--dry-run|--editor|-e|--recover|--ignore-unknown)
       return 0 ;;
   esac
   return 1
 }
+
+# Split the arguments into positionals (subcommands included) and the values
+# of -f/-F/--field/--raw-field.
+pos=()
+fields=()
+skip=0
+field=0
+for a in "$@"; do
+  if [ $skip -eq 1 ]; then
+    skip=0
+    [ $field -eq 1 ] && fields+=("$a")
+    field=0
+    continue
+  fi
+  case "$a" in
+    --) break ;;
+    --field=*|--raw-field=*) fields+=("${a#*=}") ;;
+    -f?*|-F?*) fields+=("${a#-?}") ;;
+    -f|-F|--field|--raw-field) skip=1; field=1 ;;
+    --*=*) ;;
+    -*) is_bool_flag "$a" || skip=1 ;;
+    *) pos+=("$a") ;;
+  esac
+done
 
 # OWNER/REPO, HOST/OWNER/REPO or a URL -> OWNER
 from_repo_val() {
@@ -186,12 +219,10 @@ from_api_path() {
   esac
 }
 
-# repo:O/R, org:O, user:O, owner:O anywhere in a word list, including inside a
-# key=value field such as `-f q=org:O`.
+# repo:O/R, org:O, user:O, owner:O in a list of search words.
 from_qualifier() {
   local t
   for t in $1; do
-    case "$t" in [A-Za-z_]*=*) t="${t#*=}" ;; esac
     case "$t" in
       repo:*/*) t="${t#repo:}"; printf '%s' "${t%%/*}"; return ;;
       org:?*|user:?*|owner:?*) printf '%s' "${t#*:}"; return ;;
@@ -200,23 +231,26 @@ from_qualifier() {
 }
 
 sub1="$1"
-sub2="${2:-}"
+sub2="${pos[1]:-}"
 owner=""
 
 # 1. -R / --repo / --repo= / -Rx/y; --owner for search and project; --org / -o
-#    for secret and variable.
+#    for secret and variable; --org for repo fork (the fork's new owner).
 prev=""
 for a in "$@"; do
+  [ "$a" = "--" ] && break
   case "$prev" in
     -R|--repo) owner=$(from_repo_val "$a"); break ;;
     --owner) case "$sub1" in search|project) owner="$a"; break ;; esac ;;
-    --org|-o) case "$sub1" in secret|variable) owner="$a"; break ;; esac ;;
+    --org|-o)
+      case "$sub1 $sub2" in secret\ *|variable\ *|"repo fork") owner="$a"; break ;; esac ;;
   esac
   case "$a" in
     --repo=*) owner=$(from_repo_val "${a#--repo=}"); break ;;
     -R?*) owner=$(from_repo_val "${a#-R}"); break ;;
     --owner=*) case "$sub1" in search|project) owner="${a#--owner=}"; break ;; esac ;;
-    --org=*) case "$sub1" in secret|variable) owner="${a#--org=}"; break ;; esac ;;
+    --org=*)
+      case "$sub1 $sub2" in secret\ *|variable\ *|"repo fork") owner="${a#--org=}"; break ;; esac ;;
   esac
   prev="$a"
 done
@@ -224,71 +258,84 @@ done
 # 2. GH_REPO
 [ -z "$owner" ] && [ -n "${GH_REPO:-}" ] && owner=$(from_repo_val "$GH_REPO")
 
-# 3. A repo positional, only for `gh repo` commands that take one. A bare name
-#    (no slash) for clone/create/fork means the logged-in user's repo, so the
-#    current directory must not decide: use the default account. `repo list
-#    OWNER` names the owner directly.
+# 3. `gh repo` commands that take a repo: the first positional with a slash.
+#    Without one, the target belongs to the logged-in user (a bare name for
+#    clone/create/fork, no name for list/create), so the current directory
+#    must not decide: use the default account. `repo list OWNER` names the
+#    owner directly.
 if [ -z "$owner" ] && [ "$sub1" = repo ]; then
   case "$sub2" in
     clone|view|fork|edit|delete|archive|unarchive|sync|set-default|create|list)
-      n=0; prev=""
-      for a in "$@"; do
-        n=$((n + 1)); [ $n -le 2 ] && continue
-        if is_text_flag "$prev"; then prev="$a"; continue; fi
-        case "$a" in --) break ;; -*) prev="$a"; continue ;; esac
+      first=""
+      for a in "${pos[@]:2}"; do
         case "$a" in
-          */*) owner=$(from_url "$a"); [ -n "$owner" ] || owner=$(from_repo_val "$a") ;;
-          *) case "$sub2" in
-               list) owner="$a" ;;
-               clone|create|fork) passthru "$@" ;;
-             esac ;;
+          */*) owner=$(from_url "$a"); [ -n "$owner" ] || owner=$(from_repo_val "$a"); break ;;
+          *) [ -n "$first" ] || first="$a" ;;
         esac
-        break
-      done ;;
+      done
+      if [ -z "$owner" ]; then
+        case "$sub2" in
+          list) [ -n "$first" ] && owner="$first" || passthru "$@" ;;
+          clone|create) passthru "$@" ;;
+          fork) [ -n "$first" ] && passthru "$@" ;;
+        esac
+      fi ;;
   esac
 fi
 
-# 4. A github.com URL given as an argument (never as a text flag's value).
+# 4. A github.com URL given as a positional argument.
 if [ -z "$owner" ]; then
-  prev=""
-  for a in "$@"; do
-    if ! is_text_flag "$prev"; then
-      owner=$(from_url "$a")
-      [ -n "$owner" ] && break
-    fi
-    prev="$a"
+  for a in "${pos[@]}"; do
+    owner=$(from_url "$a")
+    [ -n "$owner" ] && break
   done
 fi
 
-# 5. gh api: the endpoint path, then qualifiers in any argument (search
-#    queries are usually passed as -f q=...).
+# 5. gh api: the endpoint path, then a search query (`?q=` on the endpoint, or
+#    a q=/query= field). Other field values (`-f body=...`) are free text and
+#    never read.
 if [ -z "$owner" ] && [ "$sub1" = api ]; then
-  ep=""; prev=""
-  for a in "${@:2}"; do
-    if [ -z "$ep" ] && ! is_text_flag "$prev"; then
-      case "$prev" in
-        -X|--method|-p|--preview|--hostname|--cache) ;;   # flags that take a value
-        *) case "$a" in -*) ;; *) ep="$a" ;; esac ;;
-      esac
-    fi
-    prev="$a"
-  done
+  ep="${pos[1]:-}"
   [ -n "$ep" ] && owner=$(from_api_path "$ep")
   if [ -z "$owner" ]; then
-    for a in "$@"; do owner=$(from_qualifier "$a"); [ -n "$owner" ] && break; done
+    case "$ep" in
+      *\?q=*|*\&q=*)
+        q="${ep#*q=}"; q="${q%%&*}"
+        q=$(printf '%s' "$q" | sed 's/%3[Aa]/:/g; s/%2[Ff]/\//g; s/+/ /g; s/%20/ /g')
+        owner=$(from_qualifier "$q") ;;
+    esac
+  fi
+  if [ -z "$owner" ]; then
+    # A graphql query= field is GraphQL text, not a search query.
+    [ "$ep" = graphql ] && fields=()
+    for f in "${fields[@]}"; do
+      case "$f" in
+        q=*|query=*) owner=$(from_qualifier "${f#*=}"); [ -n "$owner" ] && break ;;
+      esac
+    done
   fi
 fi
 
 # 6. gh search: qualifiers in the query words.
 if [ -z "$owner" ] && [ "$sub1" = search ]; then
-  for a in "${@:2}"; do owner=$(from_qualifier "$a"); [ -n "$owner" ] && break; done
+  for a in "${pos[@]:2}"; do owner=$(from_qualifier "$a"); [ -n "$owner" ] && break; done
 fi
 
 # 7. The current directory's remote, preferring the one gh itself would use:
-#    the gh-resolved base, then upstream, then origin.
+#    the gh-resolved base (or the OWNER/REPO it records), then upstream, then
+#    origin.
 if [ -z "$owner" ]; then
-  rname=$(git config --get-regexp '^remote\..*\.gh-resolved$' 2>/dev/null |
-    awk '$2=="base"{sub(/^remote\./,"",$1); sub(/\.gh-resolved$/,"",$1); print $1; exit}')
+  resolved=$(git config --get-regexp '^remote\..*\.gh-resolved$' 2>/dev/null | head -n 1)
+  rname=""
+  if [ -n "$resolved" ]; then
+    rval="${resolved#* }"
+    case "$rval" in
+      */*) owner=$(from_repo_val "$rval") ;;
+      base) rname="${resolved%% *}"; rname="${rname#remote.}"; rname="${rname%.gh-resolved}" ;;
+    esac
+  fi
+fi
+if [ -z "$owner" ]; then
   url=""
   for r in $rname upstream origin; do
     url=$(git remote get-url "$r" 2>/dev/null) && [ -n "$url" ] && break

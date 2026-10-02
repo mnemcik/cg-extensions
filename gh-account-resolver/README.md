@@ -21,23 +21,26 @@ Because routing happens when `gh` actually runs, chained commands, a preceding `
 
 First match wins:
 
-1. `-R` / `--repo` / `--repo=` / `-ROWNER/REPO` (`HOST/OWNER/REPO` gives `OWNER`); `--owner` for `gh search` and `gh project`; `--org` / `-o` for `gh secret` and `gh variable`.
+1. `-R` / `--repo` / `--repo=` / `-ROWNER/REPO` (`HOST/OWNER/REPO` gives `OWNER`); `--owner` for `gh search` and `gh project`; `--org` / `-o` for `gh secret` and `gh variable`; `--org` for `gh repo fork` (the fork's new owner).
 2. `GH_REPO`.
-3. The repo argument of `gh repo clone|view|fork|edit|delete|archive|unarchive|sync|set-default|create|list`. A bare name with no slash for `clone`, `create` or `fork` means the logged-in user's repo, so it goes to the default account regardless of the current directory.
-4. A `github.com` URL given as an argument. URLs inside text flags (`--body`, `-t`, `-m`, `--notes`, `-f`/`-F`/`--field`, `--jq`, `--template`, `-H`, labels and branch names) are never used.
-5. For `gh api`: the `repos/OWNER/…`, `orgs/OWNER` or `users/OWNER` endpoint (also as a full `api.github.com` URL), then a `repo:` / `org:` / `user:` / `owner:` qualifier, including inside `-f q=…`. `{owner}` placeholders count as no owner, so the current directory decides, as it does for gh.
+3. The first repo argument containing a slash for `gh repo clone|view|fork|edit|delete|archive|unarchive|sync|set-default|create|list`. Without one, the target belongs to the logged-in user (a bare name for `clone`, `create` or `fork`; no name for `list` or `create --source=.`), so it goes to the default account regardless of the current directory. `gh repo list OWNER` names the owner directly.
+4. A `github.com` URL given as a positional argument.
+5. For `gh api`: the `repos/OWNER/…`, `orgs/OWNER` or `users/OWNER` endpoint (also as a full `api.github.com` URL), then a `repo:` / `org:` / `user:` / `owner:` qualifier in a search query: the endpoint's `?q=`, or a `q=`/`query=` field (except for `gh api graphql`, where `query=` is GraphQL text). `{owner}` placeholders count as no owner, so the current directory decides, as it does for gh.
 6. For `gh search`: a qualifier in the query.
-7. The current directory's git remote: the `gh-resolved` base, else `upstream`, else `origin`.
+7. The current directory's git remote: the `gh-resolved` base (or the `OWNER/REPO` it records), else `upstream`, else `origin`.
+
+**Flag values are never read as owners.** Any flag outside a short list of known value-less flags (`--web`, `--squash`, `--private`, …) is assumed to take a value, and that value is skipped: bodies, titles, comments, subjects, descriptions, homepages, labels, branches, file paths and header or field values. A URL in `--body` or `-c` therefore never picks the account. The cost of an unknown boolean flag is that the positional after it is skipped too and the current directory decides.
 
 ### What passes straight through
 
 - A call that already sets `GH_TOKEN` or `GITHUB_TOKEN` (an explicit pin).
 - `gh auth`, `config`, `alias`, `extension`, `help`, `version`, `completion`, and bare `gh`.
+- `gh gist`: gists always belong to the logged-in user.
 - No owner found, an owner not in the map, or an owner mapped to the default account.
 
 ### Fails open
 
-Anything unexpected runs the real `gh` unchanged: a missing or malformed map, a failed token fetch, an unparseable call. The wrapper never uses `set -e`, turns off tracing first so a caller's `set -x` can't print the token, and runs on macOS `/bin/bash` 3.2. It skips every resolver directory on `PATH` when looking for the real `gh`, so nested sessions from two workspaces can't loop.
+Anything unexpected runs the real `gh` unchanged: a missing or malformed map, a failed token fetch, an unparseable call. The wrapper never uses `set -e`, turns off tracing first so a caller's `set -x` can't print the token, and runs on macOS `/bin/bash` 3.2. When looking for the real `gh` it skips every resolver directory on `PATH` and every resolver copy that already ran for this call (tracked in `GH_ACCOUNT_RESOLVER_SEEN`), so two copies can't exec each other in a circle, while `gh` aliases or extensions that call `gh` again still work. Globbing is off, so a `*` in a query can't expand to file names.
 
 ### Footprint
 
@@ -46,6 +49,7 @@ Nothing in your shell setup, `~/.config/gh` or global `gh` state changes, and yo
 ### Limits
 
 - `gh` called by absolute path (e.g. `/opt/homebrew/bin/gh`) is not routed.
+- Only the owner is matched, not the host: `-R ghe.example.com/work-org/x` gets the github.com token mapped for `work-org`.
 - Hooks' own processes don't see the session's `PATH`, so `gh` inside other hooks is not routed.
 - Sessions that were already running when you installed or upgraded keep the old behaviour until they restart.
 - After the extension is removed, the leftover `bin/gh` symlink points nowhere, and the shell falls back to the real `gh` on the default account. Delete `.claude/gh-account-resolver/` to clean up.
