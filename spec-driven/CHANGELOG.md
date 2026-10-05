@@ -7,6 +7,12 @@ track the `version` field in `cg-extension.json` (subdir extensions in the
 [`cg-extensions`](https://github.com/mnemcik/cg-extensions) monorepo are
 addressed by manifest version, not per-member git tags).
 
+## [0.1.1] - 2026-10-05
+
+### Added
+
+- The note now opens with YAML frontmatter (`title`, `category`, `tags`). Its tags include `ai-instructions`, the tag cg uses to mark notes that govern how Claude behaves, so the note can be found and reviewed with the rest of them.
+
 ## [0.1.0] - 2026-06-15
 
 ### Added

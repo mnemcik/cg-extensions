@@ -1,3 +1,9 @@
+---
+title: "Spec-Driven Development with AI"
+category: workflow
+tags: [spec-driven-development, prd, specifications, ai-instructions]
+---
+
 # Spec-Driven Development with AI
 
 A reusable methodology for building software from scratch using
