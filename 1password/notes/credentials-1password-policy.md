@@ -1,3 +1,9 @@
+---
+title: "Credentials & Secrets — 1Password in the Loop"
+category: process
+tags: [credentials, 1password, security, ai-instructions]
+---
+
 # Credentials & Secrets — 1Password in the Loop
 
 > Shipped by the [`1password`](https://github.com/mnemcik/cg-extensions/tree/main/1password) Consigliere extension. Edit the source there, not this copy — `cg extension update 1password` overwrites it.
