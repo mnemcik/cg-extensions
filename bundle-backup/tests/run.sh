@@ -126,6 +126,35 @@ git -C "$r" commit -q --allow-empty -m three
 wait_idle "$r"
 if [ ! -e "$T/missing-mount" ] && grep -q "does not exist" "$r/.git/bundle-backup.status"; then pass "missing destination not created, error recorded"; else fail "missing destination handled wrong"; fi
 
+# 6c. A relative destination is rejected; ~ is expanded.
+r="$T/r6c"
+newrepo "$r"
+git -C "$r" config bundle-backup.dest "relative/dir"
+git -C "$r" commit -q --allow-empty -m two
+wait_idle "$r"
+if grep -q "must be an absolute path" "$r/.git/bundle-backup.status" 2>/dev/null; then pass "relative destination rejected"; else fail "relative destination accepted"; fi
+mkdir -p "$T/home/bk"
+git -C "$r" config bundle-backup.dest "~/bk"
+(export HOME="$T/home"; git -C "$r" commit -q --allow-empty -m three; wait_idle "$r")
+if [ -f "$T/home/bk/r6c.bundle" ]; then pass "~ in the destination expanded"; else fail "~ not expanded: $(cat "$r/.git/bundle-backup.status")"; fi
+
+# 6d. Installed in .git/hooks, git runs the hook by a relative path; the
+#     re-exec after the lock is released must still find the script.
+r="$T/r6d"
+d="$T/dest6d"
+newrepo "$r"
+mkdir "$d"
+git -C "$r" config bundle-backup.dest "$d"
+mkdir "$r/.git/bundle-backup.lock"
+sleep 30 & holder=$!
+echo $holder >"$r/.git/bundle-backup.lock/pid"
+git -C "$r" commit -q --allow-empty -m queued
+sleep 0.5
+kill $holder 2>/dev/null; wait $holder 2>/dev/null
+(cd "$r" && sh .git/hooks/post-commit)
+wait_idle "$r"
+if git -C "$r" bundle list-heads "$d/r6d.bundle" 2>/dev/null | grep -q "^$(git -C "$r" rev-parse HEAD) "; then pass "relative hook path works"; else fail "relative hook path broke the run"; fi
+
 # 7. A commit in a linked worktree backs up the whole repository.
 r="$T/r7"
 d="$T/dest7"

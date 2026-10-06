@@ -5,7 +5,7 @@
 # post-rewrite script. As a hook it returns at once and does the work in the
 # background, so commits never wait. Configure per repository:
 #
-#   git config bundle-backup.dest <folder>      # required; unset = do nothing
+#   git config bundle-backup.dest <folder>      # required, absolute (~ ok); unset = do nothing
 #   git config bundle-backup.name <name>        # default: the main worktree's dir name
 #   git config bundle-backup.keepDays <n>       # daily copies kept, default 30
 #
@@ -15,12 +15,16 @@
 # "ok|error <ISO time> <epoch> <detail>".
 set -u
 
+# This script's absolute path, for the background job and its re-exec, which
+# run after a cd.
+self=$(cd "$(dirname "$0")" && pwd)/$(basename "$0")
+
 if [ "${1:-}" != "--run" ]; then
-	dest=$(git config --get bundle-backup.dest) || exit 0
+	dest=$(git config --type=path --get bundle-backup.dest) || exit 0
 	[ -n "$dest" ] || exit 0
 	common=$(git rev-parse --path-format=absolute --git-common-dir) || exit 0
 	# sh, not "$0": the script may lack the execute bit.
-	nohup sh "$0" --run "$common" </dev/null >/dev/null 2>&1 &
+	nohup sh "$self" --run "$common" </dev/null >/dev/null 2>&1 &
 	exit 0
 fi
 
@@ -33,7 +37,7 @@ GIT_DIR=$common
 export GIT_DIR
 unset GIT_INDEX_FILE GIT_WORK_TREE GIT_PREFIX
 
-dest=$(git config --get bundle-backup.dest) || exit 0
+dest=$(git config --type=path --get bundle-backup.dest) || exit 0
 name=$(git config --get bundle-backup.name) || name=$(basename "$(git worktree list --porcelain | sed -n '1s/^worktree //p')")
 keep=$(git config --get bundle-backup.keepDays) || keep=30
 status="$common/bundle-backup.status"
@@ -45,6 +49,13 @@ record() { # record ok|error [detail]
 }
 
 backup() {
+	case "$dest" in
+	/*) ;;
+	*)
+		record error "bundle-backup.dest must be an absolute path (got $dest)"
+		return 1
+		;;
+	esac
 	# The destination must already exist: creating it would hide a sync
 	# folder that is not mounted behind a local, unsynced copy.
 	if [ ! -d "$dest" ]; then
@@ -114,6 +125,6 @@ rm -rf "$lock"
 trap - EXIT INT TERM
 # A request that arrived between the last check and releasing the lock.
 if [ -e "$again" ]; then
-	exec sh "$0" --run "$common"
+	exec sh "$self" --run "$common"
 fi
 exit 0

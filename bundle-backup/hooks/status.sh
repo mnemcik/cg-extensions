@@ -4,11 +4,18 @@
 # no backup has run yet, when the last backup failed, or when the last good
 # backup is older than the latest commit by over an hour. Silent when all is
 # well.
-dest=$(git config --get bundle-backup.dest 2>/dev/null) || dest=
+dest=$(git config --type=path --get bundle-backup.dest 2>/dev/null) || dest=
 if [ -z "$dest" ]; then
 	echo "bundle-backup: no destination set, so this workspace is not being backed up. Set one with: git config bundle-backup.dest <folder>"
 	exit 0
 fi
+case "$dest" in
+/*) ;;
+*)
+	echo "bundle-backup: bundle-backup.dest must be an absolute path (got $dest)."
+	exit 0
+	;;
+esac
 if [ ! -d "$dest" ]; then
 	echo "bundle-backup: destination $dest does not exist (is the sync folder mounted?). Backups fail until it does."
 	exit 0

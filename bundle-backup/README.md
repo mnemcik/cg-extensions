@@ -38,7 +38,7 @@ git config bundle-backup.name my-workspace   # optional; default: the main workt
 git config bundle-backup.keepDays 30         # optional; daily copies to keep
 ```
 
-Until `bundle-backup.dest` is set, the script does nothing. The destination must already exist. The script never creates it, so a sync folder that isn't mounted shows up as a failed backup instead of a local copy that never syncs.
+Until `bundle-backup.dest` is set, the script does nothing. The destination must be an absolute path (`~` is expanded) and must already exist. The script never creates it, so a sync folder that isn't mounted shows up as a failed backup instead of a local copy that never syncs.
 
 ## Restore
 
