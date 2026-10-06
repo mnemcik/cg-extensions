@@ -1,7 +1,7 @@
 {
   "manifest": 1,
   "name": "bundle-backup",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Back up the workspace as a git bundle to a folder (e.g. a synced company drive) after every commit, merge or rewrite — no remote needed",
   "contributes": {
     "claude-md-sections": [
