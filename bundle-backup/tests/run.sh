@@ -43,11 +43,15 @@ git -C "$r" commit -q --allow-empty -m two
 sleep 0.3
 if [ ! -e "$r/.git/bundle-backup.status" ]; then pass "unset dest does nothing"; else fail "unset dest wrote a status"; fi
 if (cd "$r" && "$check") | grep -q "no destination set"; then pass "check reports unset dest"; else fail "check silent on unset dest"; fi
+git -C "$r" config bundle-backup.dest "$T"
+if (cd "$r" && "$check") | grep -q "no backup has run yet"; then pass "check reports no backup yet"; else fail "check silent before the first backup"; fi
+git -C "$r" config --unset bundle-backup.dest
 
 # 2. A commit writes a bundle that restores every branch and commit.
 r="$T/r2"
 d="$T/dest2"
 newrepo "$r"
+mkdir "$d"
 git -C "$r" config bundle-backup.dest "$d"
 git -C "$r" branch side
 git -C "$r" commit -q --allow-empty -m two
@@ -68,7 +72,7 @@ if (cd "$r" && "$check") | grep -q .; then fail "check not silent when healthy";
 # 3. Amend (post-rewrite) and a burst of concurrent runs end with one
 #    up-to-date bundle, no leftover lock or temp files.
 git -C "$r" commit -q --amend --allow-empty -m amended
-for _ in 1 2 3 4 5 6; do (cd "$r" && "$src" --run) & done
+for _ in 1 2 3 4 5 6; do (cd "$r" && sh "$src" --run "$r/.git") & done
 wait
 wait_idle "$r"
 head=$(git -C "$r" rev-parse HEAD)
@@ -83,18 +87,31 @@ git -C "$r" commit -q --allow-empty -m three
 wait_idle "$r"
 if git -C "$r" bundle list-heads "$b" | grep -q "^$(git -C "$r" rev-parse HEAD) "; then pass "stale lock taken over"; else fail "stale lock blocked the backup"; fi
 
-# 5. Daily copies older than keepDays are pruned; others kept.
+# 5. Daily copies older than keepDays are pruned; others kept, including
+#    another workspace's whose name starts the same way.
 touch -t 202001010000 "$d/daily/r2-2020-01-01.bundle"
-cp "$b" "$d/daily/r2-recent.bundle"
+cp "$b" "$d/daily/r2-old-2020-01-01.bundle"
+touch -t 202001010000 "$d/daily/r2-old-2020-01-01.bundle"
 git -C "$r" commit -q --allow-empty -m four
 wait_idle "$r"
-if [ ! -e "$d/daily/r2-2020-01-01.bundle" ] && [ -e "$d/daily/r2-recent.bundle" ]; then pass "old daily copies pruned"; else fail "prune wrong"; fi
+if [ ! -e "$d/daily/r2-2020-01-01.bundle" ] && [ -e "$d/daily/r2-old-2020-01-01.bundle" ]; then pass "old daily copies pruned, other workspace's kept"; else fail "prune wrong"; fi
+
+# 5b. The job still works when its starting directory and GIT_DIR are gone —
+#     a session worktree removed after the land.
+mkdir "$T/gone"
+(cd "$T/gone" && rmdir "$T/gone" && GIT_DIR="$T/gone/.git" GIT_INDEX_FILE="$T/gone/index" sh "$src" --run "$r/.git")
+if grep -q '^ok ' "$r/.git/bundle-backup.status"; then pass "runs after its worktree and GIT_DIR are removed"; else fail "fails without its worktree: $(cat "$r/.git/bundle-backup.status")"; fi
+
+# 5c. A good backup older than the latest commit is reported as stale.
+printf 'ok 2020-01-01T00:00:00Z 1577836800 x\n' >"$r/.git/bundle-backup.status"
+if (cd "$r" && "$check") | grep -q "over an hour older"; then pass "check reports a stale backup"; else fail "check silent on a stale backup"; fi
 
 # 6. An unwritable destination records an error and the check reports it.
 r="$T/r6"
 newrepo "$r"
-: >"$T/notadir"
-git -C "$r" config bundle-backup.dest "$T/notadir/sub"
+mkdir -p "$T/ro"
+: >"$T/ro/daily"
+git -C "$r" config bundle-backup.dest "$T/ro"
 git -C "$r" commit -q --allow-empty -m two
 wait_idle "$r"
 if grep -q '^error ' "$r/.git/bundle-backup.status" 2>/dev/null; then pass "failure recorded"; else fail "failure not recorded"; fi
@@ -103,10 +120,17 @@ if (cd "$r" && "$check") | grep -q "last backup failed"; then pass "check report
 git -C "$r" config bundle-backup.dest "$T/missing-mount"
 if (cd "$r" && "$check") | grep -q "does not exist"; then pass "check reports a missing destination"; else fail "check silent on missing destination"; fi
 
+# 6b. A missing destination (sync folder not mounted) is an error, and is not
+#     created behind the user's back.
+git -C "$r" commit -q --allow-empty -m three
+wait_idle "$r"
+if [ ! -e "$T/missing-mount" ] && grep -q "does not exist" "$r/.git/bundle-backup.status"; then pass "missing destination not created, error recorded"; else fail "missing destination handled wrong"; fi
+
 # 7. A commit in a linked worktree backs up the whole repository.
 r="$T/r7"
 d="$T/dest7"
 newrepo "$r"
+mkdir "$d"
 git -C "$r" config bundle-backup.dest "$d"
 git -C "$r" worktree add -q -b session/x "$T/r7--x"
 git -C "$T/r7--x" commit -q --allow-empty -m "from worktree"
