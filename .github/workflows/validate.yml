@@ -51,6 +51,7 @@ jobs:
               refs += [s["src"] for s in c.get("notes", [])]
               refs += [s["src"] for s in c.get("templates", [])]
               refs += [h["wrapper"] for h in c.get("hooks", [])]
+              refs += [g["script"] for g in c.get("git-hooks", [])]
               for rel in refs:
                   if not os.path.isfile(os.path.join(base, rel)):
                       failed = True
@@ -77,3 +78,18 @@ jobs:
         run: |
           git config --global init.defaultBranch main
           gh-account-resolver/tests/run.sh
+
+  bundle-backup-tests:
+    # macOS: /bin/sh is bash; Ubuntu: /bin/sh is dash — the script must work in both.
+    strategy:
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run the bundle-backup test suite
+        run: |
+          git config --global init.defaultBranch main
+          git config --global user.email ci@example.com
+          git config --global user.name CI
+          bundle-backup/tests/run.sh
