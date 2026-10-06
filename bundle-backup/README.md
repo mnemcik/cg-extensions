@@ -43,10 +43,12 @@ Until `bundle-backup.dest` is set, the script does nothing. The destination must
 ## Restore
 
 ```sh
-git bundle verify my-workspace.bundle
 git clone --mirror my-workspace.bundle my-workspace.git   # every branch, full history
+git -C my-workspace.git bundle verify my-workspace.bundle # optional: needs a repo to run in
 git clone my-workspace.git my-workspace
 ```
+
+`git bundle verify` only works inside a repository, so run it after the mirror clone. Outside a repository it fails with "need a repository to verify a bundle".
 
 A plain `git clone my-workspace.bundle` checks out only the bundle's `HEAD` branch. With `--mirror`, the intermediate `my-workspace.git` has every branch. The working clone made from it has `main` locally and the other branches as `origin/*`; `git switch <branch>` creates a local one.
 
