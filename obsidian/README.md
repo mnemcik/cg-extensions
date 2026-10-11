@@ -14,7 +14,7 @@ cg extension install cg/obsidian
 cg extension install https://github.com/mnemcik/cg-extensions --path obsidian
 ```
 
-Requires a cg release with the `gitignore` contribution point ([consigliere#160](https://github.com/mnemcik/consigliere/pull/160)). An older cg installs everything else but skips the `.gitignore` block. Item frontmatter (`title`, `status`, `priority`, `areas`, `created`), which the Bases view reads, is part of cg since 1.24; run `cg migrate` on an older workspace.
+Requires a cg release with the `gitignore` contribution point ([consigliere#160](https://github.com/mnemcik/consigliere/pull/160)). An older cg installs everything else but skips the `.gitignore` block. The Bases view reads item frontmatter (`title`, `status`, `priority`, `areas`, `created`). cg templates emit it since 1.23; on a workspace with older items, run `cg migrate` (cg 1.24 or later).
 
 Then open the workspace folder in Obsidian as a vault.
 
@@ -45,5 +45,15 @@ The extension doesn't ship `core-plugins.json` or `graph.json`. Obsidian keeps a
 
 These come from how cg copies template files ([consigliere#159](https://github.com/mnemcik/consigliere/issues/159)):
 
-- **Install overwrites** an existing `.obsidian/app.json`, `.obsidian/templates.json` or `projects/active-projects.base` without asking. If you already use the folder as a vault, back up those files first and merge your settings back.
-- **Remove deletes** those three files even if you changed them since installing. Obsidian rewrites `app.json` whenever you change a setting, so copy it first if you want to keep your settings.
+- **Every apply overwrites** `.obsidian/app.json`, `.obsidian/templates.json` and `projects/active-projects.base` without asking. That happens on `cg extension install`, on `cg extension update` (with no name it updates every extension), and when `cg init` re-installs the extension on a machine that doesn't have it cloned yet, for example after cloning the workspace. Your committed versions are then replaced in the working tree: check `git diff` afterwards and restore your settings with `git checkout -- .obsidian/app.json` (and the others) before committing.
+- **Remove deletes** those three files even if you changed them since installing. Obsidian rewrites `app.json` whenever you change a setting, so commit it or copy it first if you want to keep your settings.
+
+## Authoring / contributing
+
+See the Consigliere [extension authoring guide](https://github.com/mnemcik/consigliere/blob/main/EXTENSIONS.md).
+The manifest is `cg-extension.json`; CI validates it against the
+[canonical schema](https://github.com/mnemcik/cg-extensions-registry/blob/main/schema/cg-extension.schema.json).
+
+## License
+
+MIT — see [LICENSE](../LICENSE).
