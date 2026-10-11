@@ -52,6 +52,7 @@ jobs:
               refs += [s["src"] for s in c.get("templates", [])]
               refs += [h["wrapper"] for h in c.get("hooks", [])]
               refs += [g["script"] for g in c.get("git-hooks", [])]
+              refs += [g["path"] for g in c.get("gitignore", [])]
               for rel in refs:
                   if not os.path.isfile(os.path.join(base, rel)):
                       failed = True

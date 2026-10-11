@@ -1,0 +1,22 @@
+{
+  "manifest": 1,
+  "name": "obsidian",
+  "version": "0.1.0",
+  "description": "Use the workspace as an Obsidian vault: shared vault config, per-machine state ignored, a Bases view of active projects, and the gotchas that affect how Claude writes files",
+  "contributes": {
+    "claude-md-sections": [
+      { "id": "obsidian-vault", "path": "fragments/obsidian-vault.md" }
+    ],
+    "notes": [
+      { "src": "notes/obsidian-vault-gotchas.md", "dest": "notes/obsidian-vault-gotchas.md" }
+    ],
+    "templates": [
+      { "src": "templates/.obsidian/app.json", "dest": ".obsidian/app.json" },
+      { "src": "templates/.obsidian/templates.json", "dest": ".obsidian/templates.json" },
+      { "src": "templates/projects/active-projects.base", "dest": "projects/active-projects.base" }
+    ],
+    "gitignore": [
+      { "id": "obsidian-state", "path": "fragments/gitignore" }
+    ]
+  }
+}

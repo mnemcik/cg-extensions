@@ -1,0 +1,9 @@
+{
+  "alwaysUpdateLinks": true,
+  "newFileLocation": "folder",
+  "newFileFolderPath": "notes",
+  "attachmentFolderPath": "attachments",
+  "userIgnoreFilters": [
+    "templates/"
+  ]
+}

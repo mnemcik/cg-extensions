@@ -1,0 +1,25 @@
+filters:
+  and:
+    - file.inFolder("projects")
+    - file.path.endsWith("/README.md")
+    - status != "done"
+properties:
+  title:
+    displayName: Project
+  status:
+    displayName: Status
+  priority:
+    displayName: Priority
+  areas:
+    displayName: Areas
+  created:
+    displayName: Started
+views:
+  - type: table
+    name: Active projects
+    order:
+      - title
+      - status
+      - priority
+      - areas
+      - created
