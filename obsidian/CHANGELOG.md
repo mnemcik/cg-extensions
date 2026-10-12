@@ -3,7 +3,7 @@
 ## 0.1.1
 
 - **Fixed:** the `active-projects.base` columns show their display names (Project, Status, Priority, Areas, Started). The `properties` keys now carry the `note.` prefix; Obsidian ignored the bare keys.
-- **Changed:** the gotchas note covers the display-name prefix, and says Obsidian rewrites a `.base` file when the view changes rather than whenever it opens.
+- **Changed:** the gotchas note covers the display-name prefix, and says an already-serialised `.base` file is left unchanged on opening.
 
 ## 0.1.0
 
