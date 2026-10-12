@@ -34,10 +34,11 @@ Points marked *(observed)* were seen in a real vault but are not stated in the [
 
 ## Bases (`.base` files)
 
-- **Reference note properties bare** (`status`) or with `note.` (`note.status`). Prefer these to `file.properties.status`.
+- **Reference note properties bare** (`status`) or with `note.` (`note.status`) in filters and formulas, and bare in a view's `order` *(observed)*. Prefer these to `file.properties.status`.
+- **Display names need the prefix.** Under the top-level `properties:` key, write `note.status:` with its `displayName`. With a bare `status:` key the column shows the raw property name instead *(observed, Obsidian 1.13.7)*, although the [syntax docs](https://github.com/obsidianmd/obsidian-help/blob/master/en/Bases/Bases%20syntax.md) example shows a bare `status:` key.
 - **Select project READMEs by path:** `file.path.endsWith("/README.md")`. It is unambiguous, since every project has a file of that name. The [functions reference](https://github.com/obsidianmd/obsidian-help/blob/master/en/Bases/Functions.md) lists `file.name` (the file's name), `file.basename` (without the extension), `file.ext` and `file.folder` if you need them.
 - **An invalid expression fails silently**: the view is just empty, with no error.
-- **Obsidian rewrites a `.base` file when it opens it** *(observed)*. Comments are stripped, quoting is normalised and per-viewer state such as `columnSize` is written back. Keep any explanation of a filter outside the file, and commit Obsidian's serialisation.
+- **Obsidian rewrites a `.base` file into its own serialisation** *(observed)*. Comments are stripped, quoting is normalised and per-viewer state such as `columnSize` is written back when you resize a column. A file already in that form, with no comments, was left unchanged on opening *(observed, Obsidian 1.13.7)*. Keep any explanation of a filter outside the file, and commit Obsidian's serialisation.
 
 ## Navigating many `README.md` files
 

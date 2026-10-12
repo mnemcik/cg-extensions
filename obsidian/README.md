@@ -35,7 +35,7 @@ The rest of `.obsidian/` is shared vault config and stays tracked.
 
 ## After installing
 
-- **Bases:** if `projects/active-projects.base` doesn't open as a table, enable the Bases core plugin (Settings → Core plugins).
+- **Bases:** a new vault has the Bases core plugin on *(observed, Obsidian 1.13.7)*. If `projects/active-projects.base` doesn't open as a table, enable it (Settings → Core plugins).
 - **Daily notes:** if you don't keep a journal, turn the Daily notes core plugin off. With it on, clicking a date property such as `created:` creates an empty note for that day.
 - **Optional:** the community plugin [Front Matter Title](https://github.com/snezhig/obsidian-front-matter-title) shows each file's `title:` instead of its file name, which helps in graph view where every project has a `README.md`.
 

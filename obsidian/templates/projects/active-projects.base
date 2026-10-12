@@ -4,15 +4,15 @@ filters:
     - file.path.endsWith("/README.md")
     - status != "done"
 properties:
-  title:
+  note.title:
     displayName: Project
-  status:
+  note.status:
     displayName: Status
-  priority:
+  note.priority:
     displayName: Priority
-  areas:
+  note.areas:
     displayName: Areas
-  created:
+  note.created:
     displayName: Started
 views:
   - type: table

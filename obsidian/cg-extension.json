@@ -1,7 +1,7 @@
 {
   "manifest": 1,
   "name": "obsidian",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Use the workspace as an Obsidian vault: shared vault config, per-machine state ignored, a Bases view of active projects, and the gotchas that affect how Claude writes files",
   "contributes": {
     "claude-md-sections": [
