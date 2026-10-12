@@ -14,7 +14,7 @@ cg extension install cg/obsidian
 cg extension install https://github.com/mnemcik/cg-extensions --path obsidian
 ```
 
-Requires a cg release with the `gitignore` contribution point ([consigliere#160](https://github.com/mnemcik/consigliere/pull/160)). An older cg installs everything else but skips the `.gitignore` block. The Bases view reads item frontmatter (`title`, `status`, `priority`, `areas`, `created`). cg templates emit it since 1.23; on a workspace with older items, run `cg migrate` (cg 1.24 or later).
+Requires cg 1.26.0 or later, which adds the `gitignore` contribution point ([consigliere#160](https://github.com/mnemcik/consigliere/pull/160)). An older cg installs everything else but skips the `.gitignore` block. The Bases view reads item frontmatter (`title`, `status`, `priority`, `areas`, `created`). cg templates emit it since 1.23; on a workspace with older items, run `cg migrate` (cg 1.24 or later).
 
 Then open the workspace folder in Obsidian as a vault.
 
