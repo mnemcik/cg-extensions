@@ -1,0 +1,1 @@
+**Obsidian vault.** This workspace is also opened as an Obsidian vault. When writing or editing markdown here, load [`notes/obsidian-vault-gotchas.md`](notes/obsidian-vault-gotchas.md) before adding wikilinks, tags, `.obsidian/` config or `.base` files. In short: wikilink paths start at the vault root (never `../`), link to files not folders, and tag values can't contain a dot.
