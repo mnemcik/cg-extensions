@@ -30,12 +30,12 @@ Generic process for producing a digest of unread Gmail notifications for any lab
    ```
 
 1. **Identify the target.** Match the user's request to a target file in `notes/gmail-digest-targets/`. Read it to get the Gmail label, output slug, and digest history.
-2. **Reconcile the history with what's on disk.** List `notes/<slug>-digest-*/` and compare it with the target's Digest History table. A digest folder can arrive without a history row (for example by a bulk import), and a row can lack its `Last Message Epoch`. Trusting the table alone re-processes covered work; trusting the folders alone loses the epoch. Backfill any missing row as part of this run.
+2. **Reconcile the history with what's on disk.** List `notes/<slug>-digest-*/` and compare it with the target's Digest History table. A digest folder can arrive without a history row or a `notes/INDEX.md` pointer (for example by a bulk import), and a row can lack its `Last Message Epoch`. Trusting the table alone re-processes covered work; trusting the folders alone loses the epoch. Backfill any missing row and pointer as part of this run.
 3. **Run the digest:** search `label:<label-name> is:unread` (or run the `gmail-digest` skill if you have it: `/gmail-digest <label-name>`).
-   - **Select with `is:unread`, not `after:<epoch>`.** Gmail evaluates `after:` per *message* but returns whole *threads*, so a long-running thread with one recent message brings its entire, already-digested history back. On one busy label, `after:<last-epoch>` returned 500+ threads where `is:unread` returned the real work set. Every digest ends with its messages marked read (step 8), so unread means not yet digested. Keep the last epoch as a sanity check: messages older than it are already covered.
+   - **Select with `is:unread`, not `after:<epoch>`.** Gmail evaluates `after:` per *message* but returns whole *threads*, so a long-running thread with one recent message brings its entire, already-digested history back. On one busy label, `after:<last-epoch>` returned 500+ threads where `is:unread` returned the real work set. Every digest ends with its messages marked read (step 8), so unread means not yet digested. This assumes the user doesn't read these notifications in Gmail itself; if they do, fall back to the epoch. `is:unread` still returns whole threads, so drop messages older than the last epoch: they were covered by an earlier digest.
    - **`label:` query gotcha:** filter by the label **display name** (`label:github/your-repo`), **not** the internal label ID. Despite tool descriptions that claim `label:` accepts label IDs, `label:Label_6862811504768141164` returns `{}` (silent empty) while the name form works. The label ID is still useful for label/unlabel mutation calls — just not for search queries.
-   - **Search results cap each thread's messages.** A Gmail MCP's thread search may return only the first few messages of each thread (5 in the tools this was written against), so per-thread message counts and "latest activity" dates from search are lower bounds. A thread whose visible messages are months old can still hold unread messages from today. Read the thread itself for the real set.
-   - **`resultCountEstimate` is not a count.** It has under-reported by 3–5× (402 for 1,493 threads). Page until there is no `nextPageToken`; don't size the job from the estimate.
+   - **Search results cap each thread's messages.** A Gmail MCP's thread search may return only some of each thread's messages (5 in the tools this was written against), so per-thread message counts and "latest activity" dates from search are lower bounds. A thread whose visible messages are months old can still hold unread messages from today. Read the thread itself for the real set.
+   - **`resultCountEstimate` is not a count.** It has under-reported by 3× or more (402 for 1,493 threads). Page until there is no `nextPageToken`; don't size the job from the estimate.
    - **If the result is large,** see [Large backlogs](#large-backlogs) before reading anything.
 4. **Record the latest message timestamp.** After fetching messages, find the most recent message's `Date` header and convert it to a Unix epoch. This becomes the `Last Message Epoch` for the history row.
 5. **Output goes to:** `notes/<slug>-digest-YYYY-MM-DD/` (today's date, slug from the target file).
@@ -48,19 +48,20 @@ Generic process for producing a digest of unread Gmail notifications for any lab
 When a target hasn't been synced for weeks, reading everything in one context doesn't fit: a 58-day gap on one label was 1,493 threads, 5,094 new messages and roughly 750k tokens raw. Two strategies work without sampling:
 
 - **A — filter, then read in chunks.** Strip the corpus down and read it sequentially in one context. Cheaper, and one reader's judgment spans the whole corpus. Pick it when snippets carry enough signal and much of the corpus is mechanical (release housekeeping, version bumps, bot chatter).
-- **B — fan out to subagents.** Give full thread text to parallel subagents. More expensive, but every thread is read in full and wall-clock time is parallel. Pick it when per-thread substance matters (design arguments, review reasoning).
+- **B — fan out to subagents.** Give full thread text to parallel subagents. More expensive, but every thread is read in full, with no snippet capping, and wall-clock time is parallel. Pick it when per-thread substance matters (design arguments, review reasoning).
 
 ### Paging the result to disk (both strategies)
 
 1. **Page every thread to disk first; don't read pages inline.** Save each search page to a file and take `nextPageToken` from it with `jq`. **Never truncate the token** — a shortened token in a probe is silently invalid and restarts paging from the top. Stop when the response has no `nextPageToken`.
-2. **Audit coverage independently of the paging loop.** Whether a client saves a large tool result to a file can depend on its size, so one small page may come back inline and be missed by a glob over the saved pages, leaving a hole with no error. For a GitHub notification label, issue and PR numbers give a free continuity check:
+2. **Audit coverage independently of the paging loop.** Whether a client saves a large tool result to a file can depend on its size, so one small page may come back inline and be missed by a glob over the saved pages, leaving a hole with no error. For a GitHub notification label, issue and PR numbers give a free continuity check. For example, with `rows` holding the paged threads:
 
    ```python
+   import re
    nums = {int(m.group(1)) for r in rows if (m := re.search(r'\((?:Issue|PR) #(\d+)\)', r.subject))}
    missing = [n for n in range(min(nums), max(nums)) if n not in nums]   # expect only genuinely absent numbers
    ```
 
-   A contiguous run of missing numbers is a lost page, not a quiet week. Recover it with a date-bounded query for that window (`after:<epoch> before:<epoch>`, from the neighbouring pages' dates), not by paging again from the start.
+   A contiguous run of missing numbers is a lost page, not a quiet week. Recover it with a date-bounded query for that window (`after:<epoch> before:<epoch>`, from the neighbouring pages' dates), not by paging again from the start: page tokens are positional, so re-walking is slow.
 
 ### Strategy A — filter, then read in chunks
 

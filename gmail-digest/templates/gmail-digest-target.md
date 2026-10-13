@@ -18,5 +18,5 @@ Typical volume: {rough estimate of messages per week}.
 
 ## Digest History
 
-| Date | Location | Period Covered |
-|------|----------|---------------|
+| Date | Location | Period Covered | Last Message Epoch |
+|------|----------|---------------|-------------------|
