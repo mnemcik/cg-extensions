@@ -1,7 +1,7 @@
 {
   "manifest": 1,
   "name": "gmail-digest",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Gmail digest shortcut — turn \"check/digest X updates\" into a structured digest of unread Gmail for a label, with per-target tracking",
   "contributes": {
     "claude-md-sections": [

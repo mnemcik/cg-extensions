@@ -29,7 +29,7 @@ workflow; it does not configure mail access.
 | Contribution | What lands |
 |--------------|-----------|
 | `claude-md-sections` → `gmail-digest` | A trigger rule in your `CLAUDE.md` (under an `ext:gmail-digest:section` marker): "check/digest X updates" → run the digest workflow, skip project identification, keep the worktree gate. |
-| `notes` → `notes/gmail-digest-workflow.md` | The digest process: per-target file, `after:<epoch>` sync, the `label:`-name-not-ID gotcha, output structure, history tracking. |
+| `notes` → `notes/gmail-digest-workflow.md` | The digest process: per-target file, `is:unread` selection, Gmail search gotchas (`label:` name not ID, capped thread messages, unreliable counts), strategies for large backlogs, output structure, history tracking. |
 | `templates` → `templates/gmail-digest-target.md` | A target-file skeleton (label name + ID, output slug, domain context, digest-history table). |
 
 ## Defining targets
