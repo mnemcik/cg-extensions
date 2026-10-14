@@ -95,7 +95,7 @@ jobs:
           git config --global user.name CI
           bundle-backup/tests/run.sh
 
-  1password-tests:
+  onepassword-tests:
     # macOS covers /bin/bash 3.2, Ubuntu bash 5, Windows Git Bash.
     strategy:
       matrix:

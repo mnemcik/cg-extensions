@@ -61,7 +61,7 @@ case "$event" in PostToolUse | PostToolUseFailure) ;; *) exit 0 ;; esac
 lines=$(printf '%s\n' "$out" | tr -d '\r')
 kind=""
 if printf '%s\n' "$lines" | grep -qE \
-	-e '^[A-Za-z0-9._-]+@[^ :]+: Permission denied \(publickey' \
+	-e '^[A-Za-z0-9._-]+@[^ ]+: Permission denied \(publickey' \
 	-e '^sign_and_send_pubkey: signing failed .*agent refused operation' 2>/dev/null; then
 	kind=ssh
 elif printf '%s\n' "$lines" | grep -qE \
@@ -86,7 +86,7 @@ Probe the agent socket directly (it lists public keys only):
 Read the result:
 - "Connection refused", "No such file or directory" or "Error connecting to agent": the 1Password app is not running. Ask the user to start it (and to keep it in the menu bar or tray, so closing the window does not stop the agent).
 - "The agent has no identities": the agent is up but serving no keys. Usually 1Password is locked, or Settings > Developer > "Use the SSH agent" is off. Ask the user to unlock it. A locked 1Password can also show an unlock prompt on the user's screen; if nobody answers it, ssh fails with "agent refused operation".
-- Keys are listed but this host still refuses: the key this host needs is not among them. It is probably in a vault other than the default Personal, Private or Employee vault, so the agent does not serve it until the vault is listed in agent.toml ([[ssh-keys]] vault = "<name>"; ~/.config/1Password/ssh/agent.toml, on Windows %LOCALAPPDATA%\1Password\config\ssh\agent.toml), followed by locking and unlocking 1Password. Ask the user; do not edit their config.
+- Keys are listed but this host still refuses: the key this host needs is not among them. It is probably in a vault other than the default Personal, Private or Employee vault, so the agent does not serve it until the vault is listed in agent.toml ([[ssh-keys]] vault = "<name>"; ~/.config/1Password/ssh/agent.toml, on Windows %LOCALAPPDATA%\1Password\config\ssh\agent.toml), (if the file is new, lock and unlock 1Password once so it is picked up). Ask the user; do not edit their config.
 
 Then re-run the same command. Full rules: notes/credentials-1password-policy.md.
 EOF

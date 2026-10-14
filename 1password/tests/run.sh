@@ -91,6 +91,10 @@ $SSH_ERR" "")"
 git@github.com: Permission denied (publickey,keyboard-interactive).")"
 	ok "publickey among other methods" hint ssh PostToolUseFailure
 
+	run "$(failure "Exit code 255
+git@[::1]: Permission denied (publickey).")"
+	ok "bracketed IPv6 host" hint ssh PostToolUseFailure
+
 	run "$(failure 'Exit code 128
 sign_and_send_pubkey: signing failed for ED25519 "github" from agent: agent refused operation
 git@github.com: Permission denied (publickey).')"
