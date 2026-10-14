@@ -1,7 +1,7 @@
 {
   "manifest": 1,
   "name": "1password",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "1Password as authoritative credential store",
   "contributes": {
     "claude-md-sections": [
@@ -9,6 +9,10 @@
     ],
     "notes": [
       { "src": "notes/credentials-1password-policy.md", "dest": "notes/credentials-1password-policy.md" }
+    ],
+    "hooks": [
+      { "event": "PostToolUse", "wrapper": "hooks/ssh-auth-hint.sh", "command": "1password ssh-auth-hint" },
+      { "event": "PostToolUseFailure", "wrapper": "hooks/ssh-auth-hint-on-failure.sh", "command": "1password ssh-auth-hint" }
     ]
   }
 }

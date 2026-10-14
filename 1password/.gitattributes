@@ -1,0 +1,2 @@
+# Hook scripts must keep LF endings on Windows checkouts, or bash fails on \r.
+*.sh text eol=lf

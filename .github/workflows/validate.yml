@@ -94,3 +94,19 @@ jobs:
           git config --global user.email ci@example.com
           git config --global user.name CI
           bundle-backup/tests/run.sh
+
+  1password-tests:
+    # macOS covers /bin/bash 3.2, Ubuntu bash 5, Windows Git Bash.
+    strategy:
+      matrix:
+        os: [macos-latest, ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run the ssh-auth-hint test suite against fixture hook payloads
+        run: |
+          jq --version
+          bash 1password/tests/run.sh
