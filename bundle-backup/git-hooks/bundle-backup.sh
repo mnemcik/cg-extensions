@@ -92,8 +92,10 @@ full_check() {
 	rm -rf "$check"
 	(
 		unset GIT_DIR
+		# --git-dir, not discovery: safe.bareRepository=explicit refuses a
+		# bare repository found by discovery.
 		git init -q --bare "$check" >/dev/null 2>&1 &&
-			git -C "$check" bundle unbundle "$1" >/dev/null 2>&1
+			git --git-dir="$check" bundle unbundle "$1" >/dev/null 2>&1
 	)
 	rc=$?
 	rm -rf "$check"

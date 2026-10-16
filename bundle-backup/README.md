@@ -79,6 +79,8 @@ Uncommitted changes, git-ignored files, older stashes and local git config (`.gi
 - commits from a linked worktree
 - the bundle and the daily copy rewritten in place (same file across runs)
 - silent self-repair of a missing first backup, a stale backup, an interrupted write and a truncated bundle that `git bundle verify` passes
-- a repair that fails, and a missing hook, each reported
+- a repair that fails, a missing hook, and a hook that runs no backup, each reported
+- a missing bundle repaired; a backup still running left alone, then repaired once it is gone
+- `safe.bareRepository=explicit` in the global git config
 - the log: trigger and steps recorded, trimmed past 2000 lines
-- every message the `SessionStart` check can print
+- every message the `SessionStart` check prints, except that a repaired bundle still fails its check or that the repair run was itself interrupted

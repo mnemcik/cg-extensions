@@ -34,12 +34,13 @@ log() { # log <event> [detail]
 	printf '%s %s %s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$$" "$1" "${2:-}" >>"$logf" 2>/dev/null
 }
 
-# Wait up to 20 s for a backup run in progress (a commit made just before the
-# session started) to finish, so its outcome is what gets judged. Only the
-# lock counts: a leftover request file with no run holding the lock must not
-# hold up every session start.
+# Wait up to BUNDLE_BACKUP_WAIT seconds (default 20) for a backup run in
+# progress (a commit made just before the session started) to finish, so its
+# outcome is what gets judged. Only the lock counts: a leftover request file
+# with no run holding the lock must not hold up every session start.
+wait_s=${BUNDLE_BACKUP_WAIT:-20}
 wait_idle() {
-	for _ in $(seq 1 40); do
+	for _ in $(seq 1 $((wait_s * 2))); do
 		[ -d "$lock" ] || return 0
 		# A lock whose process is gone: the repair run takes it over.
 		pid=$(cat "$lock/pid" 2>/dev/null) && ! kill -0 "$pid" 2>/dev/null && return 0
@@ -55,8 +56,10 @@ full_check() {
 	check=$(mktemp -d "${TMPDIR:-/tmp}/bundle-backup-check.XXXXXX") || return 1
 	(
 		unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE
+		# --git-dir, not discovery: safe.bareRepository=explicit refuses a
+		# bare repository found by discovery.
 		git init -q --bare "$check/r" >/dev/null 2>&1 &&
-			git -C "$check/r" bundle unbundle "$1" >/dev/null 2>&1
+			git --git-dir="$check/r" bundle unbundle "$1" >/dev/null 2>&1
 	)
 	rc=$?
 	rm -rf "$check"
@@ -96,7 +99,17 @@ diagnose() {
 	fi
 }
 
-wait_idle || log "check" "a backup run is still going after 20 s"
+# Keep the log bounded when no backup run trims it.
+if [ ! -d "$lock" ] && [ -f "$logf" ] && [ "$(wc -l <"$logf")" -gt 2000 ]; then
+	tail -n 1000 "$logf" >"$logf.$$" && mv -f "$logf.$$" "$logf"
+fi
+
+# A run still going after the wait records its own outcome; judging it now
+# would read a half-written bundle. The next session start looks again.
+if ! wait_idle; then
+	log "check" "a backup run is still going after ${wait_s} s; left to it"
+	exit 0
+fi
 reason=$(diagnose)
 [ -n "$reason" ] || exit 0
 
@@ -110,9 +123,12 @@ fi
 # The run logs "start repair <this pid>", or "queued repair <this pid>" when a
 # run in progress takes the request over, which tells whether it ran: the
 # status alone can come out identical when two runs end in the same second.
-tag="repair $$"
+tag="repair $$-$(date +%s)"
 BUNDLE_BACKUP_FOREGROUND=1 BUNDLE_BACKUP_TRIGGER="$tag" "$hook" </dev/null >/dev/null 2>&1
-wait_idle || :
+if ! wait_idle; then
+	log "check" "the repair is still going after ${wait_s} s; left to it"
+	exit 0
+fi
 after=$(cat "$statusf" 2>/dev/null)
 if ! grep -qE " (start|queued) $tag\$" "$logf" 2>/dev/null; then
 	log "repair failed" "no backup ran"
@@ -127,6 +143,10 @@ ok*)
 	fi
 	log "repair failed" "$bundle is still damaged after a backup"
 	echo "bundle-backup: the backup needed a repair ($reason) and the repaired bundle still fails its check. Details: $logf"
+	;;
+writing*)
+	log "repair failed" "the repair run was interrupted while writing"
+	echo "bundle-backup: the backup needed a repair ($reason) and the repair run was interrupted while writing. Details: $logf"
 	;;
 *)
 	log "repair failed" "$after"

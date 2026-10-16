@@ -142,6 +142,27 @@ if git -C "$r" bundle verify --quiet "$b" >/dev/null 2>&1; then echo "info git b
 repaired "a damaged bundle" ".* is damaged"
 if [ "$b" -ef "$T/bundle.link" ]; then pass "repair rewrites the bundle in place"; else fail "repair replaced the bundle file"; fi
 if (cd "$r" && "$check") | grep -q .; then fail "check not silent after a repair"; else pass "check silent after a repair"; fi
+rm -f "$b"
+repaired "a missing bundle" ".* is missing"
+# A run still going after the wait is left to finish, silently: judging it
+# would read a half-written bundle.
+mkdir "$r/.git/bundle-backup.lock"
+sleep 30 & holder=$!
+echo $holder >"$r/.git/bundle-backup.lock/pid"
+printf 'writing 2026-01-01T00:00:00Z 4102444800 x\n' >"$r/.git/bundle-backup.status"
+out=$(cd "$r" && BUNDLE_BACKUP_WAIT=1 "$check")
+if [ -z "$out" ] && grep -q "still going after 1 s; left to it" "$r/.git/bundle-backup.log"; then pass "check leaves a running backup alone"; else fail "check judged a running backup: $out"; fi
+kill $holder 2>/dev/null; wait $holder 2>/dev/null
+rm -rf "$r/.git/bundle-backup.lock"
+repaired "the interrupted run after it" "the last backup was interrupted while writing"
+# safe.bareRepository=explicit must not break the full check.
+printf '[safe]\n\tbareRepository = explicit\n' >"$T/strict.gitconfig"
+GIT_CONFIG_GLOBAL="$T/strict.gitconfig" git -C "$r" commit -q --allow-empty -m strict
+wait_idle "$r"
+if grep -q '^ok ' "$r/.git/bundle-backup.status"; then pass "works with safe.bareRepository=explicit"; else fail "fails with safe.bareRepository=explicit: $(cat "$r/.git/bundle-backup.status")"; fi
+printf 'ok 2020-01-01T00:00:00Z 1577836800 x\n' >"$r/.git/bundle-backup.status"
+out=$(cd "$r" && GIT_CONFIG_GLOBAL="$T/strict.gitconfig" "$check")
+if [ -z "$out" ] && grep -q '^ok ' "$r/.git/bundle-backup.status"; then pass "check repairs with safe.bareRepository=explicit"; else fail "check fails with safe.bareRepository=explicit: $out"; fi
 if grep -q " start post-commit" "$r/.git/bundle-backup.log" && grep -q " start repair" "$r/.git/bundle-backup.log" &&
 	grep -q " writing " "$r/.git/bundle-backup.log" && grep -q " ok .*bytes" "$r/.git/bundle-backup.log"; then
 	pass "log records the trigger and each step"
@@ -171,6 +192,10 @@ if grep -q " repair failed " "$r/.git/bundle-backup.log"; then pass "failed repa
 # Without the post-commit hook the check can't repair, and says so.
 mv "$r/.git/hooks/post-commit" "$r/.git/hooks/post-commit.off"
 if (cd "$r" && "$check") | grep -q "hook isn't installed"; then pass "check reports a missing hook"; else fail "check silent on a missing hook"; fi
+# A hook that runs no backup (e.g. the script isn't approved) is reported.
+printf '#!/bin/sh\nexit 0\n' >"$r/.git/hooks/post-commit"
+chmod +x "$r/.git/hooks/post-commit"
+if (cd "$r" && "$check") | grep -q "but no backup ran"; then pass "check reports that no backup ran"; else fail "check silent when no backup ran"; fi
 mv "$r/.git/hooks/post-commit.off" "$r/.git/hooks/post-commit"
 git -C "$r" config bundle-backup.dest "$T/missing-mount"
 if (cd "$r" && "$check") | grep -q "does not exist"; then pass "check reports a missing destination"; else fail "check silent on missing destination"; fi
@@ -188,6 +213,7 @@ git -C "$r" config bundle-backup.dest "relative/dir"
 git -C "$r" commit -q --allow-empty -m two
 wait_idle "$r"
 if grep -q "must be an absolute path" "$r/.git/bundle-backup.status" 2>/dev/null; then pass "relative destination rejected"; else fail "relative destination accepted"; fi
+if (cd "$r" && "$check") | grep -q "must be an absolute path"; then pass "check reports a relative destination"; else fail "check silent on a relative destination"; fi
 mkdir -p "$T/home/bk"
 git -C "$r" config bundle-backup.dest "~/bk"
 (export HOME="$T/home"; git -C "$r" commit -q --allow-empty -m three; wait_idle "$r")
