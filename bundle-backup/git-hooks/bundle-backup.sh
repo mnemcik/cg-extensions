@@ -172,8 +172,8 @@ backup() {
 		return 1
 	fi
 	# Refs moved while the bundle was made, by a command that fires no hook
-	# (branch -f, reset, update-ref): go once more. At most twice per run, so
-	# a difference that never goes away can't loop.
+	# (branch -f, reset, update-ref): go once more. At most two extra passes
+	# per run, so a difference that never goes away can't loop.
 	if [ "$moved" -lt 2 ] && [ "$(git bundle list-heads "$tmp" 2>/dev/null | LC_ALL=C sort)" != "$(live_heads)" ]; then
 		moved=$((moved + 1))
 		: >"$again"

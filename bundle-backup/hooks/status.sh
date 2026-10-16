@@ -103,7 +103,7 @@ live_heads() {
 
 # diagnose: print why the backup needs a repair, or nothing when it is sound.
 diagnose() {
-	local status
+	local status heads
 	if ! status=$(cat "$statusf" 2>/dev/null); then
 		echo "no backup has run yet"
 		return
@@ -126,7 +126,12 @@ diagnose() {
 	# That catches what commit dates can't (a fast-forward land, a deleted or
 	# reset branch) and a file in the destination that isn't the one written
 	# (a version restored by the sync client, a sync conflict).
-	if [ "$(git bundle list-heads "$bundle" 2>/dev/null | LC_ALL=C sort)" != "$(live_heads)" ]; then
+	heads=$(git bundle list-heads "$bundle" 2>/dev/null | LC_ALL=C sort)
+	if [ -z "$heads" ]; then
+		echo "$bundle is damaged (no refs in its header)"
+		return
+	fi
+	if [ "$heads" != "$(live_heads)" ]; then
 		echo "branches changed since the last backup"
 		return
 	fi
@@ -174,7 +179,13 @@ fi
 case "$after" in
 ok*)
 	if full_check "$bundle"; then
-		log repaired "$reason"
+		# Refs can legitimately move again right after the repair (another
+		# session committing), so this is logged, not shown.
+		if [ "$(git bundle list-heads "$bundle" 2>/dev/null | LC_ALL=C sort)" = "$(live_heads)" ]; then
+			log repaired "$reason"
+		else
+			log "repaired, refs still differ" "$reason"
+		fi
 		exit 0
 	fi
 	log "repair failed" "$bundle is still damaged after a backup"

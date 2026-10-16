@@ -141,7 +141,7 @@ repaired "a new branch" "branches changed since the last backup"
 git -C "$r" -c core.hooksPath="$nohooks" checkout -q -b ff
 git -C "$r" -c core.hooksPath="$nohooks" commit -q --allow-empty -m "ff target"
 git -C "$r" -c core.hooksPath="$nohooks" checkout -q main
-repaired "a commit made without the hook" "branches changed since the last backup"
+repaired "a branch with a commit made without the hook" "branches changed since the last backup"
 git -C "$r" update-ref refs/heads/main refs/heads/ff
 repaired "a fast-forward of main" "branches changed since the last backup"
 if git -C "$r" bundle list-heads "$b" | grep -q "^$(git -C "$r" rev-parse ff) refs/heads/main"; then pass "repaired bundle has main at the fast-forward"; else fail "repaired bundle has a stale main"; fi
@@ -154,6 +154,9 @@ ln -f "$b" "$T/bundle.link"
 head -c $(($(wc -c <"$b") / 2)) "$b" >"$T/half" && cat "$T/half" >"$b"
 if git -C "$r" bundle verify --quiet "$b" >/dev/null 2>&1; then echo "info git bundle verify passes the truncated bundle"; fi
 repaired "a damaged bundle" ".* is damaged"
+# A bundle whose header is gone is logged as damaged, not as changed refs.
+printf 'not a bundle\n' >"$b"
+repaired "a bundle with no header" ".* is damaged (no refs in its header)"
 if [ "$b" -ef "$T/bundle.link" ]; then pass "repair rewrites the bundle in place"; else fail "repair replaced the bundle file"; fi
 if (cd "$r" && "$check") | grep -q .; then fail "check not silent after a repair"; else pass "check silent after a repair"; fi
 rm -f "$b"
