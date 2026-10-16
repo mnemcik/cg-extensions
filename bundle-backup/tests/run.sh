@@ -155,6 +155,23 @@ if [ -z "$out" ] && grep -q "still going after 1 s; left to it" "$r/.git/bundle-
 kill $holder 2>/dev/null; wait $holder 2>/dev/null
 rm -rf "$r/.git/bundle-backup.lock"
 repaired "the interrupted run after it" "the last backup was interrupted while writing"
+# A lock over 6 hours old counts as dead even when its pid is alive (a hung
+# run, or a reused pid): the check repairs instead of waiting on it forever.
+mkdir "$r/.git/bundle-backup.lock"
+sleep 30 & holder=$!
+echo $holder >"$r/.git/bundle-backup.lock/pid"
+touch -t 202001010000 "$r/.git/bundle-backup.lock"
+printf 'writing 2026-01-01T00:00:00Z 4102444800 x\n' >"$r/.git/bundle-backup.status"
+out=$(cd "$r" && BUNDLE_BACKUP_WAIT=1 "$check")
+kill $holder 2>/dev/null; wait $holder 2>/dev/null
+if [ -z "$out" ] && grep -q '^ok ' "$r/.git/bundle-backup.status"; then pass "check repairs past a lock over 6 hours old"; else fail "check stuck on an old lock: $out"; fi
+# A wait that isn't a positive whole number falls back to the default
+# instead of switching the check off.
+for w in 0 abc 2s; do
+	printf 'ok 2020-01-01T00:00:00Z 1577836800 x\n' >"$r/.git/bundle-backup.status"
+	out=$(cd "$r" && BUNDLE_BACKUP_WAIT=$w "$check" 2>&1)
+	if [ -z "$out" ] && grep -q '^ok .*bytes' "$r/.git/bundle-backup.status"; then pass "BUNDLE_BACKUP_WAIT=$w still checks"; else fail "BUNDLE_BACKUP_WAIT=$w: ${out:-no repair}"; fi
+done
 # safe.bareRepository=explicit must not break the full check.
 printf '[safe]\n\tbareRepository = explicit\n' >"$T/strict.gitconfig"
 GIT_CONFIG_GLOBAL="$T/strict.gitconfig" git -C "$r" commit -q --allow-empty -m strict

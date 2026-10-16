@@ -39,14 +39,24 @@ log() { # log <event> [detail]
 # outcome is what gets judged. Only the lock counts: a leftover request file
 # with no run holding the lock must not hold up every session start.
 wait_s=${BUNDLE_BACKUP_WAIT:-20}
+case "$wait_s" in
+'' | *[!0-9]* | 0) wait_s=20 ;;
+esac
+# idle: no run holds the lock. A lock whose process is gone, or that is over
+# 6 hours old (a hung run, or a dead one whose pid was reused), counts as
+# idle too: the repair run takes it over, as any backup run would.
+idle() {
+	[ -d "$lock" ] || return 0
+	[ -n "$(find "$lock" -maxdepth 0 -mmin +360 2>/dev/null)" ] && return 0
+	pid=$(cat "$lock/pid" 2>/dev/null) && ! kill -0 "$pid" 2>/dev/null && return 0
+	return 1
+}
 wait_idle() {
 	for _ in $(seq 1 $((wait_s * 2))); do
-		[ -d "$lock" ] || return 0
-		# A lock whose process is gone: the repair run takes it over.
-		pid=$(cat "$lock/pid" 2>/dev/null) && ! kill -0 "$pid" 2>/dev/null && return 0
+		idle && return 0
 		sleep 0.5
 	done
-	return 1
+	idle
 }
 
 # The same full check the backup run uses: git bundle verify reads only the
