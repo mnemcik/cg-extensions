@@ -165,12 +165,25 @@ printf 'writing 2026-01-01T00:00:00Z 4102444800 x\n' >"$r/.git/bundle-backup.sta
 out=$(cd "$r" && BUNDLE_BACKUP_WAIT=1 "$check")
 kill $holder 2>/dev/null; wait $holder 2>/dev/null
 if [ -z "$out" ] && grep -q '^ok ' "$r/.git/bundle-backup.status"; then pass "check repairs past a lock over 6 hours old"; else fail "check stuck on an old lock: $out"; fi
-# A wait that isn't a positive whole number falls back to the default
-# instead of switching the check off.
-for w in 0 abc 2s; do
+# A wait outside 1-999 falls back to the 20 s default: with a live lock held,
+# the check is still waiting after 3 s, and goes on silently once the holder
+# is gone.
+for w in 0 08 abc 2s 99999999999; do
+	mkdir "$r/.git/bundle-backup.lock"
+	sleep 30 & holder=$!
+	echo $holder >"$r/.git/bundle-backup.lock/pid"
 	printf 'ok 2020-01-01T00:00:00Z 1577836800 x\n' >"$r/.git/bundle-backup.status"
-	out=$(cd "$r" && BUNDLE_BACKUP_WAIT=$w "$check" 2>&1)
-	if [ -z "$out" ] && grep -q '^ok .*bytes' "$r/.git/bundle-backup.status"; then pass "BUNDLE_BACKUP_WAIT=$w still checks"; else fail "BUNDLE_BACKUP_WAIT=$w: ${out:-no repair}"; fi
+	(cd "$r" && BUNDLE_BACKUP_WAIT=$w "$check" >"$T/wait.out" 2>&1) & checker=$!
+	sleep 3
+	if kill -0 $checker 2>/dev/null; then waited=1; else waited=0; fi
+	kill $holder 2>/dev/null; wait $holder 2>/dev/null
+	wait $checker
+	if [ "$waited" = 1 ] && [ ! -s "$T/wait.out" ] && grep -q '^ok .*bytes' "$r/.git/bundle-backup.status"; then
+		pass "BUNDLE_BACKUP_WAIT=$w falls back to the default"
+	else
+		fail "BUNDLE_BACKUP_WAIT=$w: waited=$waited $(cat "$T/wait.out")"
+	fi
+	rm -rf "$r/.git/bundle-backup.lock"
 done
 # safe.bareRepository=explicit must not break the full check.
 printf '[safe]\n\tbareRepository = explicit\n' >"$T/strict.gitconfig"
