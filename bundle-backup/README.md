@@ -12,8 +12,8 @@ The extension contributes one script as a `post-commit`, `post-merge` and `post-
 
 1. Returns at once and works in the background, so commits never wait. The background job leaves the hook's checkout and environment, so removing a session worktree right after landing doesn't break it.
 2. Takes a lock in the git dir. A run that finds the lock held asks the holder to go once more, so a burst of commits from parallel sessions produces one or two bundles, not one per commit. A lock whose process is gone is taken over.
-3. Runs `git bundle create --all` to a temp file in the destination, checks it with `git bundle verify`, then renames it over `<name>.bundle`.
-4. Copies the result to `daily/<name>-YYYY-MM-DD.bundle`, keeping the last state of each day, and deletes daily copies older than `keepDays`.
+3. Runs `git bundle create --all` to a temp file in the git dir and checks it with `git bundle verify`.
+4. Writes it into `<name>.bundle` and `daily/<name>-YYYY-MM-DD.bundle` in place, checks each copy against the temp file, and deletes daily copies older than `keepDays`. The daily copy keeps the last state of each day. The files are written in place, not replaced by a rename, so they keep their identity: under Google Drive for desktop on macOS, a rename over a file sends the file it replaced to the macOS Trash.
 5. Records `ok` or `error` with a timestamp in `<git-dir>/bundle-backup.status`.
 
 A `SessionStart` check reports, as a session message, when:
