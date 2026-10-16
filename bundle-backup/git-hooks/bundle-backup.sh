@@ -43,9 +43,18 @@ keep=$(git config --get bundle-backup.keepDays) || keep=30
 status="$common/bundle-backup.status"
 lock="$common/bundle-backup.lock"
 again="$common/bundle-backup.again"
+tmp="$common/bundle-backup.$$.tmp"
 
 record() { # record ok|error [detail]
 	printf '%s %s %s %s\n' "$1" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(date +%s)" "${2:-}" >"$status.$$" && mv -f "$status.$$" "$status"
+}
+
+# put <src> <file>: write src into file in place and check the copy. A rename
+# over the file would leave a new file in its place, and Google Drive for
+# desktop moves the file it replaced to the macOS Trash. Writing in place keeps
+# the file, so Drive records a new version of it instead.
+put() {
+	cat "$1" >"$2" && cmp -s "$1" "$2"
 }
 
 backup() {
@@ -66,9 +75,13 @@ backup() {
 		record error "cannot create $dest/daily"
 		return 1
 	fi
-	# Temp files left by a run that was killed.
+	# Temp files left by a run that was killed, including the lock file git
+	# bundle create writes through. Up to 0.1.1 they were written in the
+	# destination.
+	find "$common" -maxdepth 1 -type f \( -name "bundle-backup.*.tmp" -o -name "bundle-backup.*.tmp.lock" \) -mmin +60 -exec rm -f {} + 2>/dev/null
 	find "$dest" "$dest/daily" -maxdepth 1 -type f -name ".$name.*.tmp" -mmin +60 -exec rm -f {} + 2>/dev/null
-	tmp="$dest/.$name.bundle.$$.tmp"
+	# Build and verify in the git dir, outside the synced folder, then write
+	# into the destination in place. That write is not atomic; see put.
 	if ! out=$(git bundle create "$tmp" --all 2>&1); then
 		rm -f "$tmp"
 		record error "git bundle create failed: $(printf '%s' "$out" | tr '\n' ' ')"
@@ -79,14 +92,18 @@ backup() {
 		record error "the new bundle did not verify"
 		return 1
 	fi
-	mv -f "$tmp" "$dest/$name.bundle" || { record error "cannot write $dest/$name.bundle"; return 1; }
+	if ! put "$tmp" "$dest/$name.bundle"; then
+		rm -f "$tmp"
+		record error "cannot write $dest/$name.bundle"
+		return 1
+	fi
 	day="$dest/daily/$name-$(date +%Y-%m-%d).bundle"
-	dtmp="$dest/daily/.$name.daily.$$.tmp"
-	if ! { cp "$dest/$name.bundle" "$dtmp" && mv -f "$dtmp" "$day"; }; then
-		rm -f "$dtmp"
+	if ! put "$tmp" "$day"; then
+		rm -f "$tmp"
 		record error "latest bundle written, but the daily copy $day failed"
 		return 1
 	fi
+	rm -f "$tmp"
 	find "$dest/daily" -maxdepth 1 -type f -name "$name-[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9].bundle" -mtime +"$keep" -exec rm -f {} + 2>/dev/null
 	record ok "$dest/$name.bundle"
 }
@@ -113,8 +130,8 @@ if ! mkdir "$lock" 2>/dev/null; then
 	fi
 fi
 echo $$ >"$lock/pid"
-trap 'rm -rf "$lock"' EXIT
-trap 'rm -rf "$lock"; exit 1' INT TERM
+trap 'rm -rf "$lock"; rm -f "$tmp"' EXIT
+trap 'rm -rf "$lock"; rm -f "$tmp"; exit 1' INT TERM
 
 while :; do
 	rm -f "$again"
