@@ -43,6 +43,7 @@ keep=$(git config --get bundle-backup.keepDays) || keep=30
 status="$common/bundle-backup.status"
 lock="$common/bundle-backup.lock"
 again="$common/bundle-backup.again"
+tmp="$common/bundle-backup.$$.tmp"
 
 record() { # record ok|error [detail]
 	printf '%s %s %s %s\n' "$1" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(date +%s)" "${2:-}" >"$status.$$" && mv -f "$status.$$" "$status"
@@ -74,13 +75,13 @@ backup() {
 		record error "cannot create $dest/daily"
 		return 1
 	fi
-	# Temp files left by a run that was killed. Up to 0.1.1 they were written
-	# in the destination.
-	find "$common" -maxdepth 1 -type f -name "bundle-backup.*.tmp" -mmin +60 -exec rm -f {} + 2>/dev/null
+	# Temp files left by a run that was killed, including the lock file git
+	# bundle create writes through. Up to 0.1.1 they were written in the
+	# destination.
+	find "$common" -maxdepth 1 -type f \( -name "bundle-backup.*.tmp" -o -name "bundle-backup.*.tmp.lock" \) -mmin +60 -exec rm -f {} + 2>/dev/null
 	find "$dest" "$dest/daily" -maxdepth 1 -type f -name ".$name.*.tmp" -mmin +60 -exec rm -f {} + 2>/dev/null
-	# Build and verify in the git dir, so a sync client never sees a
-	# half-written bundle, then write it into the destination.
-	tmp="$common/bundle-backup.$$.tmp"
+	# Build and verify in the git dir, outside the synced folder, then write
+	# into the destination in place. That write is not atomic; see put.
 	if ! out=$(git bundle create "$tmp" --all 2>&1); then
 		rm -f "$tmp"
 		record error "git bundle create failed: $(printf '%s' "$out" | tr '\n' ' ')"
@@ -129,8 +130,8 @@ if ! mkdir "$lock" 2>/dev/null; then
 	fi
 fi
 echo $$ >"$lock/pid"
-trap 'rm -rf "$lock"' EXIT
-trap 'rm -rf "$lock"; exit 1' INT TERM
+trap 'rm -rf "$lock"; rm -f "$tmp"' EXIT
+trap 'rm -rf "$lock"; rm -f "$tmp"; exit 1' INT TERM
 
 while :; do
 	rm -f "$again"

@@ -71,13 +71,13 @@ if (cd "$r" && "$check") | grep -q .; then fail "check not silent when healthy";
 
 # 3. Amend (post-rewrite) and a burst of concurrent runs end with one
 #    up-to-date bundle, no leftover lock or temp files. The bundle and the
-#    daily copy are written in place, so each keeps its file (inode): a
-#    rename over it would send the old file to the macOS Trash under Google
-#    Drive for desktop.
-inode() { ls -i "$1" | awk '{print $1}'; }
+#    daily copy are written in place, so each keeps its file: a rename over
+#    it would send the old file to the macOS Trash under Google Drive for
+#    desktop. A hard link holds on to the old file, so a freed inode number
+#    can't be reused and hide a rename (Linux reuses them at once).
 day=$(ls "$d/daily/r2-"*.bundle)
-ino=$(inode "$b")
-dino=$(inode "$day")
+ln "$b" "$T/bundle.link"
+ln "$day" "$T/day.link"
 git -C "$r" commit -q --amend --allow-empty -m amended
 for _ in 1 2 3 4 5 6; do (cd "$r" && sh "$src" --run "$r/.git") & done
 wait
@@ -85,8 +85,8 @@ wait_idle "$r"
 head=$(git -C "$r" rev-parse HEAD)
 if git -C "$r" bundle list-heads "$b" | grep -q "^$head refs/heads/main"; then pass "bundle holds the latest HEAD after a burst"; else fail "bundle is stale after a burst"; fi
 if ls "$d"/.*.tmp "$d"/daily/.*.tmp "$r"/.git/bundle-backup.*.tmp 2>/dev/null | grep -q .; then fail "temp files left behind"; else pass "no temp files left"; fi
-if [ "$(inode "$b")" = "$ino" ]; then pass "bundle rewritten in place"; else fail "bundle replaced by a new file"; fi
-if [ "$(inode "$day")" = "$dino" ]; then pass "daily copy rewritten in place"; else fail "daily copy replaced by a new file"; fi
+if [ "$b" -ef "$T/bundle.link" ]; then pass "bundle rewritten in place"; else fail "bundle replaced by a new file"; fi
+if [ "$day" -ef "$T/day.link" ]; then pass "daily copy rewritten in place"; else fail "daily copy replaced by a new file"; fi
 if [ ! -d "$r/.git/bundle-backup.lock" ]; then pass "lock released"; else fail "lock left behind"; fi
 
 # 4. A lock left by a dead process is taken over.
