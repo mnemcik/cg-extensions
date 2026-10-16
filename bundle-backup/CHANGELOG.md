@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.0
+
+- **Added:** the `SessionStart` check repairs the backup itself, without a session message. It does this when no backup has run yet, the last one failed or was interrupted while writing, the backup is older than the latest commit, or the bundle in the destination is missing or damaged. It runs the `post-commit` hook in the foreground, so cg's approval of the script still applies, and checks the bundle again afterwards. A message now appears only when the user has to act: no destination or a relative one, the destination missing, no hook or no backup run, or a repair that failed.
+- **Added:** `<git-dir>/bundle-backup.log` records every run with what started it (the hook, a repair, a rerun), each step, and every repair and its outcome, for investigating problems later. It is trimmed to the last 1000 lines once it passes 2000.
+- **Added:** the status says `writing` while the bundle is being written into the destination. A run killed mid-write therefore no longer leaves a stale `ok`.
+- **Fixed:** the bundle is now checked by unpacking every object into a throwaway repository. `git bundle verify` reads only the header and passes a truncated or damaged bundle, so up to 0.1.2 the "verified" bundle was checked only by its header. The restore docs no longer suggest `git bundle verify` as a check.
+
 ## 0.1.2
 
 - **Fixed:** with the destination in Google Drive for desktop on macOS, earlier versions of `<name>.bundle` piled up in the macOS Trash, about 10 MB each, most runs. The backup renamed a temp file over the bundle, which leaves a new file in place of the old one, and Drive moved the replaced file to the Trash. It now builds and verifies the bundle in the git dir and writes it into the existing files in place, so they keep their identity and Drive records a new version instead. Each copy is checked against the verified bundle. The write into the destination is no longer atomic: a run cut short mid-write leaves a broken latest bundle until the next commit, while earlier daily copies stay intact.
