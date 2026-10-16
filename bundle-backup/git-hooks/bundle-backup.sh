@@ -102,6 +102,25 @@ full_check() {
 	return $rc
 }
 
+# live_heads: the refs git bundle create --all writes, one "<oid> <ref>" per
+# line and sorted: every ref of the repository, HEAD, and the HEAD of each
+# linked worktree that resolves. Read from the common git dir, so a linked
+# worktree's own HEAD and per-worktree refs don't leak in. The SessionStart
+# check builds the same list.
+live_heads() {
+	(
+		GIT_DIR=$common
+		export GIT_DIR
+		git for-each-ref --format='%(objectname) %(refname)'
+		h=$(git rev-parse -q --verify HEAD 2>/dev/null) && echo "$h HEAD"
+		for w in "$common"/worktrees/*/; do
+			[ -d "$w" ] || continue
+			id=$(basename "$w")
+			h=$(git rev-parse -q --verify "worktrees/$id/HEAD" 2>/dev/null) && echo "$h worktrees/$id/HEAD"
+		done
+	) | LC_ALL=C sort
+}
+
 backup() {
 	case "$dest" in
 	/*) ;;
@@ -152,6 +171,14 @@ backup() {
 		record error "latest bundle written, but the daily copy $day failed"
 		return 1
 	fi
+	# Refs moved while the bundle was made, by a command that fires no hook
+	# (branch -f, reset, update-ref): go once more. At most twice per run, so
+	# a difference that never goes away can't loop.
+	if [ "$moved" -lt 2 ] && [ "$(git bundle list-heads "$tmp" 2>/dev/null | LC_ALL=C sort)" != "$(live_heads)" ]; then
+		moved=$((moved + 1))
+		: >"$again"
+		log "refs moved" "during the run; going once more"
+	fi
 	size=$(wc -c <"$tmp" | tr -d ' ')
 	rm -f "$tmp"
 	find "$dest/daily" -maxdepth 1 -type f -name "$name-[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9].bundle" -mtime +"$keep" -exec rm -f {} + 2>/dev/null
@@ -190,6 +217,7 @@ if ! mkdir "$lock" 2>/dev/null; then
 	fi
 fi
 echo $$ >"$lock/pid"
+moved=0
 trap 'rm -rf "$lock" "$check"; rm -f "$tmp"' EXIT
 trap 'rm -rf "$lock" "$check"; rm -f "$tmp"; log killed "$trigger"; exit 1' INT TERM
 

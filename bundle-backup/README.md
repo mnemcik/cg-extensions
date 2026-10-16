@@ -13,7 +13,7 @@ The extension contributes one script as a `post-commit`, `post-merge` and `post-
 1. Returns at once and works in the background, so commits never wait. The background job leaves the hook's checkout and environment, so removing a session worktree right after landing doesn't break it.
 2. Takes a lock in the git dir. A run that finds the lock held asks the holder to go once more, so a burst of commits from parallel sessions produces one or two bundles, not one per commit. A lock whose process is gone is taken over.
 3. Runs `git bundle create --all` to a temp file in the git dir and checks it by unpacking every object into a throwaway repository. `git bundle verify` isn't enough: it reads only the header, and passes a truncated or damaged bundle.
-4. Records `writing` in the status, writes the bundle into `<name>.bundle` and `daily/<name>-YYYY-MM-DD.bundle` in place, checks each copy against the temp file, and deletes daily copies older than `keepDays`. The daily copy keeps the last state of each day. The files are written in place, not replaced by a rename, so they keep their identity: under Google Drive for desktop on macOS, a rename over a file sends the file it replaced to the macOS Trash. The write is not atomic, which is why the status says `writing` until it's done.
+4. Records `writing` in the status, writes the bundle into `<name>.bundle` and `daily/<name>-YYYY-MM-DD.bundle` in place, checks each copy against the temp file, and deletes daily copies older than `keepDays`. The daily copy keeps the last state of each day. The files are written in place, not replaced by a rename, so they keep their identity: under Google Drive for desktop on macOS, a rename over a file sends the file it replaced to the macOS Trash. The write is not atomic, which is why the status says `writing` until it's done. If the refs in the new bundle no longer match the live ones (a command that fires no hook moved a branch while the bundle was made), the run goes once more, at most twice.
 5. Records `ok` or `error` with a timestamp in `<git-dir>/bundle-backup.status`, and appends every step (what started the run, writing, ok, error, a queued or killed run) to `<git-dir>/bundle-backup.log`. The log stays on the machine, is never synced, and is trimmed to its last 1000 lines once it passes 2000.
 
 ### Self-repair at session start
@@ -22,7 +22,7 @@ A `SessionStart` check repairs the backup without involving the user when one of
 
 - no backup has run yet
 - the last backup failed, or was interrupted while writing (the status still says `writing`)
-- the last good backup is older than the latest commit
+- the refs in the destination bundle differ from the live ones: every ref, `HEAD` and each linked worktree's `HEAD`, read from the common git dir. That covers a new commit, and also changes that bring no newer commit date: a fast-forward land whose backup didn't run, a deleted or reset branch, a new tag or stash. It also covers a file in the destination that isn't the one written, such as a version restored by the sync client
 - `<name>.bundle` is missing from the destination, or fails the same full check
 
 It first waits up to 20 seconds for a backup already in progress. Then it runs the repository's `post-commit` hook in the foreground, the same hook a commit runs, so cg's approval of the script still applies. Any other `post-commit` scripts run too, as they would on a commit. Afterwards it checks the bundle again. Each repair and its outcome is logged.
@@ -78,7 +78,9 @@ Uncommitted changes, git-ignored files, older stashes and local git config (`.gi
 - an unwritable destination
 - commits from a linked worktree
 - the bundle and the daily copy rewritten in place (same file across runs)
-- silent self-repair of a missing first backup, a stale backup, an interrupted write and a truncated bundle that `git bundle verify` passes
+- silent self-repair of a missing first backup, an interrupted write and a truncated bundle that `git bundle verify` passes
+- ref changes without a newer commit date repaired: a new branch, a fast-forward of `main`, a deleted branch, a detached worktree's commit, an annotated tag
+- a session in a linked worktree finds a current backup current, and a current backup isn't repaired again
 - a repair that fails, a missing hook, and a hook that runs no backup, each reported
 - a missing bundle repaired; a backup still running left alone, then repaired once it is gone
 - `safe.bareRepository=explicit` in the global git config
