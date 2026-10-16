@@ -43,8 +43,11 @@ git -C "$r" commit -q --allow-empty -m two
 sleep 0.3
 if [ ! -e "$r/.git/bundle-backup.status" ]; then pass "unset dest does nothing"; else fail "unset dest wrote a status"; fi
 if (cd "$r" && "$check") | grep -q "no destination set"; then pass "check reports unset dest"; else fail "check silent on unset dest"; fi
-git -C "$r" config bundle-backup.dest "$T"
-if (cd "$r" && "$check") | grep -q "no backup has run yet"; then pass "check reports no backup yet"; else fail "check silent before the first backup"; fi
+mkdir "$T/dest1"
+git -C "$r" config bundle-backup.dest "$T/dest1"
+out=$(cd "$r" && "$check")
+if [ -z "$out" ] && [ -f "$T/dest1/r1.bundle" ] && grep -q '^ok ' "$r/.git/bundle-backup.status"; then pass "check makes the first backup silently"; else fail "no silent first backup: $out"; fi
+if grep -q " repaired no backup has run yet" "$r/.git/bundle-backup.log"; then pass "first backup by the check is logged"; else fail "first backup by the check not logged"; fi
 git -C "$r" config --unset bundle-backup.dest
 
 # 2. A commit writes a bundle that restores every branch and commit.
@@ -111,9 +114,47 @@ mkdir "$T/gone"
 (cd "$T/gone" && rmdir "$T/gone" && GIT_DIR="$T/gone/.git" GIT_INDEX_FILE="$T/gone/index" sh "$src" --run "$r/.git")
 if grep -q '^ok ' "$r/.git/bundle-backup.status"; then pass "runs after its worktree and GIT_DIR are removed"; else fail "fails without its worktree: $(cat "$r/.git/bundle-backup.status")"; fi
 
-# 5c. A good backup older than the latest commit is reported as stale.
+# 5c. The check repairs, silently, a backup older than the latest commit, an
+#     interrupted write, and a damaged bundle; each repair is logged.
+# repaired <what> <log pattern>: the check printed nothing, the status is ok,
+# the bundle passes a full unpack, and the log names the repair.
+repaired() {
+	local out
+	out=$(cd "$r" && "$check")
+	rm -rf "$T/unpack"
+	git init -q --bare "$T/unpack"
+	if [ -z "$out" ] && grep -q '^ok ' "$r/.git/bundle-backup.status" &&
+		git -C "$T/unpack" bundle unbundle "$b" >/dev/null 2>&1 &&
+		grep -q " repaired $2" "$r/.git/bundle-backup.log"; then
+		pass "check repairs $1 silently"
+	else
+		fail "check did not repair $1: ${out:-$(cat "$r/.git/bundle-backup.status")}"
+	fi
+}
 printf 'ok 2020-01-01T00:00:00Z 1577836800 x\n' >"$r/.git/bundle-backup.status"
-if (cd "$r" && "$check") | grep -q "over an hour older"; then pass "check reports a stale backup"; else fail "check silent on a stale backup"; fi
+repaired "a stale backup" "the last backup .* is older than the latest commit"
+printf 'writing 2026-01-01T00:00:00Z 4102444800 x\n' >"$r/.git/bundle-backup.status"
+repaired "an interrupted write" "the last backup was interrupted while writing"
+# A truncated bundle passes git bundle verify, so the check must unpack it.
+ln -f "$b" "$T/bundle.link"
+head -c $(($(wc -c <"$b") / 2)) "$b" >"$T/half" && cat "$T/half" >"$b"
+if git -C "$r" bundle verify --quiet "$b" >/dev/null 2>&1; then echo "info git bundle verify passes the truncated bundle"; fi
+repaired "a damaged bundle" ".* is damaged"
+if [ "$b" -ef "$T/bundle.link" ]; then pass "repair rewrites the bundle in place"; else fail "repair replaced the bundle file"; fi
+if (cd "$r" && "$check") | grep -q .; then fail "check not silent after a repair"; else pass "check silent after a repair"; fi
+if grep -q " start post-commit" "$r/.git/bundle-backup.log" && grep -q " start repair" "$r/.git/bundle-backup.log" &&
+	grep -q " writing " "$r/.git/bundle-backup.log" && grep -q " ok .*bytes" "$r/.git/bundle-backup.log"; then
+	pass "log records the trigger and each step"
+else
+	fail "log incomplete"
+fi
+
+# 5d. The log is trimmed once it passes 2000 lines.
+seq 1 2500 | sed 's/^/old /' >>"$r/.git/bundle-backup.log"
+git -C "$r" commit -q --allow-empty -m trim
+wait_idle "$r"
+n=$(wc -l <"$r/.git/bundle-backup.log" | tr -d ' ')
+if [ "$n" -le 1010 ] && tail -n 1 "$r/.git/bundle-backup.log" | grep -q " ok "; then pass "log trimmed"; else fail "log not trimmed ($n lines)"; fi
 
 # 6. An unwritable destination records an error and the check reports it.
 r="$T/r6"
@@ -124,8 +165,13 @@ git -C "$r" config bundle-backup.dest "$T/ro"
 git -C "$r" commit -q --allow-empty -m two
 wait_idle "$r"
 if grep -q '^error ' "$r/.git/bundle-backup.status" 2>/dev/null; then pass "failure recorded"; else fail "failure not recorded"; fi
-git -C "$r" config bundle-backup.dest "$T"
-if (cd "$r" && "$check") | grep -q "last backup failed"; then pass "check reports the failure"; else fail "check silent on failure"; fi
+out=$(cd "$r" && "$check")
+if printf '%s' "$out" | grep -q "automatic repair failed: cannot create"; then pass "check reports a repair that failed"; else fail "check silent on a failed repair: $out"; fi
+if grep -q " repair failed " "$r/.git/bundle-backup.log"; then pass "failed repair logged"; else fail "failed repair not logged"; fi
+# Without the post-commit hook the check can't repair, and says so.
+mv "$r/.git/hooks/post-commit" "$r/.git/hooks/post-commit.off"
+if (cd "$r" && "$check") | grep -q "hook isn't installed"; then pass "check reports a missing hook"; else fail "check silent on a missing hook"; fi
+mv "$r/.git/hooks/post-commit.off" "$r/.git/hooks/post-commit"
 git -C "$r" config bundle-backup.dest "$T/missing-mount"
 if (cd "$r" && "$check") | grep -q "does not exist"; then pass "check reports a missing destination"; else fail "check silent on missing destination"; fi
 

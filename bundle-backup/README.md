@@ -12,19 +12,29 @@ The extension contributes one script as a `post-commit`, `post-merge` and `post-
 
 1. Returns at once and works in the background, so commits never wait. The background job leaves the hook's checkout and environment, so removing a session worktree right after landing doesn't break it.
 2. Takes a lock in the git dir. A run that finds the lock held asks the holder to go once more, so a burst of commits from parallel sessions produces one or two bundles, not one per commit. A lock whose process is gone is taken over.
-3. Runs `git bundle create --all` to a temp file in the git dir and checks it with `git bundle verify`.
-4. Writes it into `<name>.bundle` and `daily/<name>-YYYY-MM-DD.bundle` in place, checks each copy against the temp file, and deletes daily copies older than `keepDays`. The daily copy keeps the last state of each day. The files are written in place, not replaced by a rename, so they keep their identity: under Google Drive for desktop on macOS, a rename over a file sends the file it replaced to the macOS Trash.
-5. Records `ok` or `error` with a timestamp in `<git-dir>/bundle-backup.status`.
+3. Runs `git bundle create --all` to a temp file in the git dir and checks it by unpacking every object into a throwaway repository. `git bundle verify` isn't enough: it reads only the header, and passes a truncated or damaged bundle.
+4. Records `writing` in the status, writes the bundle into `<name>.bundle` and `daily/<name>-YYYY-MM-DD.bundle` in place, checks each copy against the temp file, and deletes daily copies older than `keepDays`. The daily copy keeps the last state of each day. The files are written in place, not replaced by a rename, so they keep their identity: under Google Drive for desktop on macOS, a rename over a file sends the file it replaced to the macOS Trash. The write is not atomic, which is why the status says `writing` until it's done.
+5. Records `ok` or `error` with a timestamp in `<git-dir>/bundle-backup.status`, and appends every step (what started the run, writing, ok, error, a queued or killed run) to `<git-dir>/bundle-backup.log`. The log stays on the machine, is never synced, and is trimmed to its last 1000 lines once it passes 2000.
 
-A `SessionStart` check reports, as a session message, when:
+### Self-repair at session start
 
-- no destination is set
-- the destination doesn't exist (for example, the sync folder isn't mounted)
+A `SessionStart` check repairs the backup without involving the user when one of these is true:
+
 - no backup has run yet
-- the last backup failed
-- the last good backup is over an hour older than the latest commit
+- the last backup failed, or was interrupted while writing (the status still says `writing`)
+- the last good backup is older than the latest commit
+- `<name>.bundle` is missing from the destination, or fails the same full check
 
-When everything is fine it stays silent.
+It first waits up to 20 seconds for a backup already in progress. Then it runs the repository's `post-commit` hook in the foreground, the same hook a commit runs, so cg's approval of the script still applies. Any other `post-commit` scripts run too, as they would on a commit. Afterwards it checks the bundle again. Each repair and its outcome is logged.
+
+It shows a session message only when the user has to act:
+
+- no destination is set, or it isn't an absolute path
+- the destination doesn't exist (for example, the sync folder isn't mounted)
+- the `post-commit` hook isn't installed, or no backup ran (for example, the script isn't approved)
+- the repair failed; the message gives the reason and the log's path
+
+When everything is fine, or a repair succeeded, it stays silent.
 
 The extension also adds a CLAUDE.md section that explains the backup and how to restore from it.
 
@@ -44,11 +54,11 @@ Until `bundle-backup.dest` is set, the script does nothing. The destination must
 
 ```sh
 git clone --mirror my-workspace.bundle my-workspace.git   # every branch, full history
-git -C my-workspace.git bundle verify my-workspace.bundle # optional: needs a repo to run in
+git -C my-workspace.git fsck --full                       # optional: check every object
 git clone my-workspace.git my-workspace
 ```
 
-`git bundle verify` only works inside a repository, so run it after the mirror clone. Outside a repository it fails with "need a repository to verify a bundle".
+The mirror clone unpacks and checks every object, and fails on a damaged bundle. `git bundle verify` isn't a substitute: it reads only the header.
 
 A plain `git clone my-workspace.bundle` checks out only the bundle's `HEAD` branch. With `--mirror`, the intermediate `my-workspace.git` has every branch. The working clone made from it has `main` locally and the other branches as `origin/*`; `git switch <branch>` creates a local one.
 
@@ -67,4 +77,8 @@ Uncommitted changes, git-ignored files, older stashes and local git config (`.gi
 - a stale lock left by a dead process
 - an unwritable destination
 - commits from a linked worktree
+- the bundle and the daily copy rewritten in place (same file across runs)
+- silent self-repair of a missing first backup, a stale backup, an interrupted write and a truncated bundle that `git bundle verify` passes
+- a repair that fails, and a missing hook, each reported
+- the log: trigger and steps recorded, trimmed past 2000 lines
 - every message the `SessionStart` check can print
