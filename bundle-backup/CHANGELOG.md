@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.1
+
+- **Fixed:** the `SessionStart` check judged whether the backup was current by commit dates, so ref changes without a newer commit date went unnoticed: a fast-forward land whose backup didn't run, a deleted or reset branch, a new tag. It now compares the refs in the destination bundle (`git bundle list-heads`) with the live refs, read from the common git dir so a session in a linked worktree compares the same list. A file in the destination that isn't the one written, such as a version restored by the sync client, is caught the same way.
+- **Fixed:** when refs move while a bundle is being made, by a command that fires no hook, the run now goes once more (at most two extra passes), so the bundle ends up with the refs as they are.
+
 ## 0.2.0
 
 - **Added:** the `SessionStart` check repairs the backup itself, without a session message. It does this when no backup has run yet, the last one failed or was interrupted while writing, the backup is older than the latest commit, or the bundle in the destination is missing or damaged. It runs the `post-commit` hook in the foreground, so cg's approval of the script still applies, and checks the bundle again afterwards. A message now appears only when the user has to act: no destination or a relative one, the destination missing, no hook or no backup run, or a repair that failed.

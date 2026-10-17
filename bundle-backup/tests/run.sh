@@ -131,8 +131,22 @@ repaired() {
 		fail "check did not repair $1: ${out:-$(cat "$r/.git/bundle-backup.status")}"
 	fi
 }
-printf 'ok 2020-01-01T00:00:00Z 1577836800 x\n' >"$r/.git/bundle-backup.status"
-repaired "a stale backup" "the last backup .* is older than the latest commit"
+# Ref changes that fire no hook and bring no newer commit date: a new branch,
+# a fast-forward of main to a commit that already exists (a land whose backup
+# didn't run), and a deleted branch.
+nohooks="$T/nohooks"
+mkdir -p "$nohooks"
+git -C "$r" update-ref refs/heads/moved HEAD
+repaired "a new branch" "branches changed since the last backup"
+git -C "$r" -c core.hooksPath="$nohooks" checkout -q -b ff
+git -C "$r" -c core.hooksPath="$nohooks" commit -q --allow-empty -m "ff target"
+git -C "$r" -c core.hooksPath="$nohooks" checkout -q main
+repaired "a branch with a commit made without the hook" "branches changed since the last backup"
+git -C "$r" update-ref refs/heads/main refs/heads/ff
+repaired "a fast-forward of main" "branches changed since the last backup"
+if git -C "$r" bundle list-heads "$b" | grep -q "^$(git -C "$r" rev-parse ff) refs/heads/main"; then pass "repaired bundle has main at the fast-forward"; else fail "repaired bundle has a stale main"; fi
+git -C "$r" branch -q -D moved
+repaired "a deleted branch" "branches changed since the last backup"
 printf 'writing 2026-01-01T00:00:00Z 4102444800 x\n' >"$r/.git/bundle-backup.status"
 repaired "an interrupted write" "the last backup was interrupted while writing"
 # A truncated bundle passes git bundle verify, so the check must unpack it.
@@ -140,6 +154,9 @@ ln -f "$b" "$T/bundle.link"
 head -c $(($(wc -c <"$b") / 2)) "$b" >"$T/half" && cat "$T/half" >"$b"
 if git -C "$r" bundle verify --quiet "$b" >/dev/null 2>&1; then echo "info git bundle verify passes the truncated bundle"; fi
 repaired "a damaged bundle" ".* is damaged"
+# A bundle whose header is gone is logged as damaged, not as changed refs.
+printf 'not a bundle\n' >"$b"
+repaired "a bundle with no header" ".* is damaged (no refs in its header)"
 if [ "$b" -ef "$T/bundle.link" ]; then pass "repair rewrites the bundle in place"; else fail "repair replaced the bundle file"; fi
 if (cd "$r" && "$check") | grep -q .; then fail "check not silent after a repair"; else pass "check silent after a repair"; fi
 rm -f "$b"
@@ -172,7 +189,7 @@ for w in 0 08 abc 2s 99999999999; do
 	mkdir "$r/.git/bundle-backup.lock"
 	sleep 30 & holder=$!
 	echo $holder >"$r/.git/bundle-backup.lock/pid"
-	printf 'ok 2020-01-01T00:00:00Z 1577836800 x\n' >"$r/.git/bundle-backup.status"
+	git -C "$r" update-ref "refs/heads/wait-$w" HEAD
 	(cd "$r" && BUNDLE_BACKUP_WAIT=$w "$check" >"$T/wait.out" 2>&1) & checker=$!
 	sleep 3
 	if kill -0 $checker 2>/dev/null; then waited=1; else waited=0; fi
@@ -190,9 +207,9 @@ printf '[safe]\n\tbareRepository = explicit\n' >"$T/strict.gitconfig"
 GIT_CONFIG_GLOBAL="$T/strict.gitconfig" git -C "$r" commit -q --allow-empty -m strict
 wait_idle "$r"
 if grep -q '^ok ' "$r/.git/bundle-backup.status"; then pass "works with safe.bareRepository=explicit"; else fail "fails with safe.bareRepository=explicit: $(cat "$r/.git/bundle-backup.status")"; fi
-printf 'ok 2020-01-01T00:00:00Z 1577836800 x\n' >"$r/.git/bundle-backup.status"
+git -C "$r" update-ref refs/heads/strict HEAD
 out=$(cd "$r" && GIT_CONFIG_GLOBAL="$T/strict.gitconfig" "$check")
-if [ -z "$out" ] && grep -q '^ok ' "$r/.git/bundle-backup.status"; then pass "check repairs with safe.bareRepository=explicit"; else fail "check fails with safe.bareRepository=explicit: $out"; fi
+if [ -z "$out" ] && git -C "$r" bundle list-heads "$b" | grep -q " refs/heads/strict$"; then pass "check repairs with safe.bareRepository=explicit"; else fail "check fails with safe.bareRepository=explicit: $out"; fi
 if grep -q " start post-commit" "$r/.git/bundle-backup.log" && grep -q " start repair" "$r/.git/bundle-backup.log" &&
 	grep -q " writing " "$r/.git/bundle-backup.log" && grep -q " ok .*bytes" "$r/.git/bundle-backup.log"; then
 	pass "log records the trigger and each step"
@@ -276,6 +293,26 @@ git -C "$r" worktree add -q -b session/x "$T/r7--x"
 git -C "$T/r7--x" commit -q --allow-empty -m "from worktree"
 wait_idle "$r"
 if git -C "$r" bundle list-heads "$d/r7.bundle" 2>/dev/null | grep -q "refs/heads/session/x"; then pass "worktree commit backed up under the main name"; else fail "worktree commit not backed up"; fi
+# A session starting in the linked worktree, whose HEAD differs from the main
+# one, finds the backup current: no repair.
+out=$(cd "$T/r7--x" && "$check")
+if [ -z "$out" ] && ! grep -q " repair " "$r/.git/bundle-backup.log"; then pass "check from a linked worktree finds the backup current"; else fail "check from a linked worktree repaired or spoke: $out"; fi
+# A detached linked worktree and a tag: the live list still matches the bundle.
+git -C "$r" worktree add -q --detach "$T/r7--d" HEAD
+mkdir -p "$T/nohooks7"
+git -C "$T/r7--d" -c core.hooksPath="$T/nohooks7" commit -q --allow-empty -m detached
+git -C "$r" tag -a -m t v1
+out=$(cd "$r" && "$check")
+if [ -z "$out" ] && git -C "$r" bundle list-heads "$d/r7.bundle" | grep -q " refs/tags/v1$" &&
+	git -C "$r" bundle list-heads "$d/r7.bundle" | grep -q "^$(git -C "$T/r7--d" rev-parse HEAD) worktrees/r7--d/HEAD$"; then
+	pass "detached worktree and annotated tag repaired into the bundle"
+else
+	fail "detached worktree or tag missing: $out"
+fi
+out=$(cd "$r" && "$check")
+n=$(grep -c " repair " "$r/.git/bundle-backup.log")
+out2=$(cd "$r" && "$check")
+if [ -z "$out$out2" ] && [ "$(grep -c " repair " "$r/.git/bundle-backup.log")" = "$n" ]; then pass "no repeated repairs once current"; else fail "check keeps repairing"; fi
 
 echo
 if [ "$fails" -eq 0 ]; then echo "all passed"; else echo "$fails failed"; exit 1; fi

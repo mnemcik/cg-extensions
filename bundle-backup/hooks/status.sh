@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # bundle-backup SessionStart check. Repairs the backup without involving the
-# user when it can: no backup yet, a failed or interrupted last run, a backup
-# older than the latest commit, or a missing or damaged bundle in the
-# destination each start a backup run in the foreground, through the same
+# user when it can: no backup yet, a failed or interrupted last run, refs in
+# the destination bundle that differ from the live ones, or a missing or
+# damaged bundle in the destination each start a backup run in the
+# foreground, through the same
 # post-commit hook a commit runs. Says something only when the user has to act:
 # backups not configured, the destination missing (e.g. the sync folder is not
 # mounted), the hook not installed, or a repair that failed. Every decision is
@@ -82,9 +83,27 @@ full_check() {
 	return $rc
 }
 
+# live_heads: the refs git bundle create --all writes, sorted; the same list
+# the backup run builds. Read from the common git dir: in a linked worktree,
+# HEAD and the per-worktree refs are that worktree's, not the ones the
+# bundle holds.
+live_heads() {
+	(
+		export GIT_DIR=$common
+		unset GIT_WORK_TREE GIT_INDEX_FILE
+		git for-each-ref --format='%(objectname) %(refname)'
+		h=$(git rev-parse -q --verify HEAD 2>/dev/null) && echo "$h HEAD"
+		for w in "$common"/worktrees/*/; do
+			[ -d "$w" ] || continue
+			id=$(basename "$w")
+			h=$(git rev-parse -q --verify "worktrees/$id/HEAD" 2>/dev/null) && echo "$h worktrees/$id/HEAD"
+		done
+	) | LC_ALL=C sort
+}
+
 # diagnose: print why the backup needs a repair, or nothing when it is sound.
 diagnose() {
-	local status last latest
+	local status heads
 	if ! status=$(cat "$statusf" 2>/dev/null); then
 		echo "no backup has run yet"
 		return
@@ -99,15 +118,21 @@ diagnose() {
 		return
 		;;
 	esac
-	set -- $status
-	last=${3:-0}
-	latest=$(git for-each-ref --sort=-committerdate --count=1 --format='%(committerdate:unix)' 2>/dev/null)
-	if [ -n "$latest" ] && [ "$last" -gt 0 ] 2>/dev/null && [ "$latest" -gt "$last" ]; then
-		echo "the last backup ($2) is older than the latest commit"
-		return
-	fi
 	if [ ! -f "$bundle" ]; then
 		echo "$bundle is missing"
+		return
+	fi
+	# Compare the refs in the destination bundle itself with the live ones.
+	# That catches what commit dates can't (a fast-forward land, a deleted or
+	# reset branch) and a file in the destination that isn't the one written
+	# (a version restored by the sync client, a sync conflict).
+	heads=$(git bundle list-heads "$bundle" 2>/dev/null | LC_ALL=C sort)
+	if [ -z "$heads" ]; then
+		echo "$bundle is damaged (no refs in its header)"
+		return
+	fi
+	if [ "$heads" != "$(live_heads)" ]; then
+		echo "branches changed since the last backup"
 		return
 	fi
 	if ! full_check "$bundle"; then
@@ -154,7 +179,13 @@ fi
 case "$after" in
 ok*)
 	if full_check "$bundle"; then
-		log repaired "$reason"
+		# Refs can legitimately move again right after the repair (another
+		# session committing), so this is logged, not shown.
+		if [ "$(git bundle list-heads "$bundle" 2>/dev/null | LC_ALL=C sort)" = "$(live_heads)" ]; then
+			log repaired "$reason"
+		else
+			log "repaired, refs still differ" "$reason"
+		fi
 		exit 0
 	fi
 	log "repair failed" "$bundle is still damaged after a backup"
