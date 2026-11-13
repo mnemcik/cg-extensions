@@ -45,9 +45,23 @@ yq_str() {
   printf '"%s"' "$v"
 }
 
+# oneline: tabs, CRs and newlines become spaces (keeps ids and frontmatter one-line).
+oneline() { printf '%s' "$1" | tr '\t\r\n' '   '; }
+
+# rand_hex: 6 hex digits, from /dev/urandom when available.
+rand_hex() {
+  local h=""
+  [ -r /dev/urandom ] && h=$(od -An -N3 -tx1 /dev/urandom 2>/dev/null | tr -d ' \n')
+  [ "${#h}" -eq 6 ] || h=$(printf '%03x%03x' $((RANDOM % 4096)) $((RANDOM % 4096)))
+  printf '%s\n' "$h"
+}
+
 valid_date() { printf '%s' "$1" | grep -Eq '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'; }
 
-# records FILE... — one TSV line per item:
+# records FILE... — one TSV line per item. The reader handles what cg shop writes
+# plus simple hand edits (unquoted or single-quoted values, extra keys, CRLF); it is
+# not a full YAML parser (no comments after values, no multi-line scalars).
+# Columns:
 #   id status supplier qty project part title order_ref added needed_by ordered received link mpn price
 records() {
   [ "$#" -gt 0 ] || return 0
@@ -73,6 +87,7 @@ records() {
       id = fname; sub(/^.*\//, "", id); sub(/\.md$/, "", id)
       printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", id, f["status"], f["supplier"], f["qty"], f["project"], f["part"], f["title"], f["order_ref"], f["added"], f["needed_by"], f["ordered"], f["received"], f["link"], f["mpn"], f["price"]
     }
+    { sub(/\r$/, "") }
     FNR == 1 { flush(); delete f; fname = FILENAME; state = 0 }
     state == 0 { if ($0 ~ /^---[ \t]*$/) { state = 1; next } else { state = 2 } }
     state == 1 {
@@ -97,9 +112,12 @@ all_records() {
 # resolve_id ID-OR-PREFIX — prints the full id of exactly one item.
 resolve_id() {
   local want=$1 dir matches n
+  case "$want" in
+    ''|.*|*[!A-Za-z0-9._-]*) die "'$want' is not an item id (ids use only letters, digits, '.', '_' and '-')" ;;
+  esac
   dir=$(shop_dir)
   if [ -f "$dir/$want.md" ]; then printf '%s\n' "$want"; return; fi
-  matches=$(all_records | cut -f1 | awk -v p="$want" 'index($0, p) == 1')
+  matches=$(all_records | cut -f1 | P="$want" awk 'index($0, ENVIRON["P"]) == 1')
   n=$(printf '%s' "$matches" | grep -c . || true)
   [ "$n" -eq 1 ] || {
     [ "$n" -eq 0 ] && die "no item matches '$want'"
@@ -132,6 +150,7 @@ set_fields() {
         val[k] = substr(lines[i], j + 1); order[++cnt] = k
       }
     }
+    { sub(/\r$/, "") }
     NR == 1 && /^---[ \t]*$/ { print; fm = 1; next }
     fm == 1 && /^---[ \t]*$/ {
       for (i = 1; i <= cnt; i++) { k = order[i]; if (!(k in done) && val[k] != "") print k ": " val[k] }
@@ -142,7 +161,11 @@ set_fields() {
       if (k in val) { if (!(k in done)) { done[k] = 1; if (val[k] != "") print k ": " val[k] } ; next }
     }
     { print }
-  ' "$file" >"$tmp" && mv "$tmp" "$file" || { rm -f "$tmp"; die "could not update $file"; }
+    END { if (fm != 2) exit 3 }
+  ' "$file" >"$tmp"
+  local rc=$?
+  if [ "$rc" -eq 3 ]; then rm -f "$tmp"; die "$file has no frontmatter block (--- ... ---); fix it by hand"; fi
+  [ "$rc" -eq 0 ] && mv "$tmp" "$file" || { rm -f "$tmp"; die "could not update $file"; }
 }
 
 # ---------------------------------------------------------------- commands
@@ -165,6 +188,9 @@ cmd_add() {
       *) title="$title${title:+ }$1"; shift ;;
     esac
   done
+  title=$(oneline "$title"); supplier=$(oneline "$supplier"); project=$(oneline "$project")
+  part=$(oneline "$part"); mpn=$(oneline "$mpn"); link=$(oneline "$link"); price=$(oneline "$price")
+  case "$title" in *[!\ ]*) ;; *) title="" ;; esac
   [ -n "$title" ] || usage_die "add: what to buy is required, e.g. cg shop add \"ESP32-C6 module\" --supplier lcsc"
   [ -n "$supplier" ] || usage_die "add: --supplier is required"
   printf '%s' "$qty" | grep -Eq '^[1-9][0-9]*$' || usage_die "add: --qty must be a positive whole number, got '$qty'"
@@ -175,11 +201,11 @@ cmd_add() {
   local dir date slug id
   dir=$(shop_dir); date=$(today)
   slug=$(slugify "$title"); [ -n "$slug" ] || slug=item
-  id="$date-$slug"
+  # The random suffix is always there: two worktrees adding the same item on the
+  # same day must still create different files, or their lands conflict.
   mkdir -p "$dir" || die "cannot create $dir"
-  while [ -e "$dir/$id.md" ]; do
-    id="$date-$slug-$(printf '%04x' $((RANDOM % 65536)))"
-  done
+  id="$date-$slug-$(rand_hex)"
+  while [ -e "$dir/$id.md" ]; do id="$date-$slug-$(rand_hex)"; done
 
   {
     printf -- '---\n'
@@ -208,8 +234,8 @@ cmd_list() {
     case "$1" in
       --status)      status=${2-}; shift 2 || usage_die "--status needs a value" ;;
       --all|-a)      status=all; shift ;;
-      --supplier|-s) supplier=$(slugify "${2-}"); shift 2 || usage_die "--supplier needs a value" ;;
-      --project|-p)  project=$(slugify "${2-}"); shift 2 || usage_die "--project needs a value" ;;
+      --supplier|-s) [ "$#" -ge 2 ] || usage_die "--supplier needs a value"; supplier=$(slugify "$2"); [ -n "$supplier" ] || usage_die "list: supplier '$2' has no letters or digits"; shift 2 ;;
+      --project|-p)  [ "$#" -ge 2 ] || usage_die "--project needs a value"; project=$(slugify "$2"); [ -n "$project" ] || usage_die "list: project '$2' has no letters or digits"; shift 2 ;;
       --by)          by=${2-}; shift 2 || usage_die "--by needs a value" ;;
       --tsv)         format=tsv; shift ;;
       *) usage_die "list: unknown argument $1" ;;
@@ -219,7 +245,8 @@ cmd_list() {
   case " open all $STATUSES " in *" $status "*) ;; *) usage_die "list: --status must be open, all, or one of: $STATUSES" ;; esac
 
   local rows
-  rows=$(all_records | awk -F'\t' -v st="$status" -v sup="$supplier" -v prj="$project" '
+  rows=$(all_records | ST="$status" SUP="$supplier" PRJ="$project" awk -F'\t' '
+    BEGIN { st = ENVIRON["ST"]; sup = ENVIRON["SUP"]; prj = ENVIRON["PRJ"] }
     (st == "all" || (st == "open" && ($2 == "needed" || $2 == "ordered")) || $2 == st) &&
     (sup == "" || $3 == sup) && (prj == "" || $5 == prj)')
 
@@ -232,22 +259,23 @@ cmd_list() {
 
   printf '%s\n' "$rows" | awk -F'\t' -v by="$by" '
     function rank(s) { return s == "needed" ? 1 : s == "ordered" ? 2 : s == "received" ? 3 : s == "cancelled" ? 4 : 5 }
-    { key = (by == "supplier") ? $3 : (by == "project") ? ($5 == "" ? "(no project)" : $5) : ""
+    { key = (by == "supplier") ? ($3 == "" ? "(no supplier)" : $3) : (by == "project") ? ($5 == "" ? "(no project)" : $5) : ""
       printf "%s\t%d\t%s\t%s\n", key, rank($2), $9, $0 }' |
   LC_ALL=C sort -t "$(printf '\t')" -k1,1 -k2,2n -k3,3 |
   cut -f4- |
   awk -F'\t' -v by="$by" '
-    BEGIN { split("needed ordered received cancelled", st, " "); st[5] = "" }
+    BEGIN { split("needed ordered received cancelled", st, " ") }
     function header() {
       if (by == "none" || cur == "") return
       s = ""
-      for (r = 1; r <= 5; r++) { k = st[r]; if (k in cnt) s = s (s == "" ? "" : ", ") cnt[k] " " k }
+      for (r = 1; r <= 4; r++) { k = st[r]; if (k in cnt) { s = s (s == "" ? "" : ", ") cnt[k] " " k; delete cnt[k] } }
+      for (k in cnt) s = s (s == "" ? "" : ", ") cnt[k] " " (k == "" ? "no status" : k)
       printf "%s%s (%s)\n", (printed++ ? "\n" : ""), cur, s
       for (i = 1; i <= n; i++) print lines[i]
       delete cnt; n = 0
     }
     {
-      key = (by == "supplier") ? $3 : (by == "project") ? ($5 == "" ? "(no project)" : $5) : ""
+      key = (by == "supplier") ? ($3 == "" ? "(no supplier)" : $3) : (by == "project") ? ($5 == "" ? "(no project)" : $5) : ""
       if (key != cur) { header(); cur = key }
       other = (by == "supplier") ? $5 : $3
       extra = ""
@@ -267,16 +295,16 @@ cmd_order() {
     case "$1" in
       --ref|-r) ref=${2-}; shift 2 || usage_die "--ref needs a value" ;;
       -*) usage_die "order: unknown option $1" ;;
-      *) if [ -z "$supplier" ]; then supplier=$(slugify "$1"); else ids="$ids $(resolve_id "$1")" || exit 1; fi; shift ;;
+      *) if [ -z "$supplier" ]; then supplier=$(slugify "$1"); [ -n "$supplier" ] || usage_die "order: supplier '$1' has no letters or digits"; else ids="$ids $(resolve_id "$1")" || exit 1; fi; shift ;;
     esac
   done
   [ -n "$supplier" ] || usage_die "order: name the supplier, e.g. cg shop order lcsc --ref LC2611130001"
   local dir date targets id n=0
   dir=$(shop_dir); date=$(today)
-  targets=$(all_records | awk -F'\t' -v sup="$supplier" '$2 == "needed" && $3 == sup { print $1 }')
+  targets=$(all_records | SUP="$supplier" awk -F'\t' '$2 == "needed" && $3 == ENVIRON["SUP"] { print $1 }')
   if [ -n "$ids" ]; then
     for id in $ids; do
-      printf '%s\n' "$targets" | grep -qx "$id" || die "$id is not a needed item from $supplier"
+      printf '%s\n' "$targets" | grep -qxF -- "$id" || die "$id is not a needed item from $supplier"
     done
     targets=$(printf '%s\n' $ids)
   fi
@@ -300,7 +328,7 @@ close_items() {
     esac
   done
   if [ -n "$ref" ]; then
-    ids="$ids $(all_records | awk -F'\t' -v r="$ref" '$2 == "ordered" && $8 == r { print $1 }')"
+    ids="$ids $(all_records | REF="$ref" awk -F'\t' '$2 == "ordered" && $8 == ENVIRON["REF"] { print $1 }')"
     [ -n "${ids// /}" ] || die "no ordered items with order ref '$ref'"
   fi
   if [ -z "${ids// /}" ]; then
@@ -352,7 +380,8 @@ Usage:
   cg shop show <id>
   cg shop version
 
-Ids can be shortened to any unique prefix. Supplier and project names are
+Ids can be shortened to any unique prefix. In add, everything after -- is
+taken as the title, so a title can start with a dash. Supplier and project names are
 normalised to slugs ("LCSC" and "lcsc" are the same supplier).
 
 Exit codes: 0 ok, 1 error, 2 usage.
