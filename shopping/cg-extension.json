@@ -1,0 +1,20 @@
+{
+  "manifest": 1,
+  "name": "shopping",
+  "version": "0.1.0",
+  "description": "One shared shopping list for the workspace — any project adds items, open items group by supplier so one order covers every project; one file per item, so parallel sessions never conflict (cg shop)",
+  "contributes": {
+    "claude-md-sections": [
+      { "id": "shopping", "path": "fragments/shopping.md" }
+    ],
+    "notes": [
+      { "src": "notes/shopping-list-workflow.md", "dest": "notes/shopping-list-workflow.md" }
+    ],
+    "templates": [
+      { "src": "templates/shopping-item.md", "dest": "templates/shopping-item.md" }
+    ],
+    "subcommands": [
+      { "namespace": "shop", "binary": "cg-shop" }
+    ]
+  }
+}
