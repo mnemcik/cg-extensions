@@ -56,7 +56,10 @@ rand_hex() {
   printf '%s\n' "$h"
 }
 
-valid_date() { printf '%s' "$1" | grep -Eq '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'; }
+valid_date() {
+  case "$1" in *[!0-9-]*) return 1 ;; esac  # grep matches per line; a newline must not slip through
+  printf '%s' "$1" | grep -Eq '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+}
 
 # records FILE... — one TSV line per item. The reader handles what cg shop writes
 # plus simple hand edits (unquoted or single-quoted values, extra keys, CRLF); it is
@@ -150,6 +153,7 @@ set_fields() {
         val[k] = substr(lines[i], j + 1); order[++cnt] = k
       }
     }
+    # CRLF input is written back as LF; with core.autocrlf the index stores LF anyway.
     { sub(/\r$/, "") }
     NR == 1 && /^---[ \t]*$/ { print; fm = 1; next }
     fm == 1 && /^---[ \t]*$/ {
@@ -190,7 +194,7 @@ cmd_add() {
   done
   title=$(oneline "$title"); supplier=$(oneline "$supplier"); project=$(oneline "$project")
   part=$(oneline "$part"); mpn=$(oneline "$mpn"); link=$(oneline "$link"); price=$(oneline "$price")
-  case "$title" in *[!\ ]*) ;; *) title="" ;; esac
+  title=$(printf '%s' "$title" | sed -e 's/^ *//' -e 's/ *$//')
   [ -n "$title" ] || usage_die "add: what to buy is required, e.g. cg shop add \"ESP32-C6 module\" --supplier lcsc"
   [ -n "$supplier" ] || usage_die "add: --supplier is required"
   printf '%s' "$qty" | grep -Eq '^[1-9][0-9]*$' || usage_die "add: --qty must be a positive whole number, got '$qty'"
@@ -298,6 +302,7 @@ cmd_order() {
       *) if [ -z "$supplier" ]; then supplier=$(slugify "$1"); [ -n "$supplier" ] || usage_die "order: supplier '$1' has no letters or digits"; else ids="$ids $(resolve_id "$1")" || exit 1; fi; shift ;;
     esac
   done
+  ref=$(oneline "$ref")
   [ -n "$supplier" ] || usage_die "order: name the supplier, e.g. cg shop order lcsc --ref LC2611130001"
   local dir date targets id n=0
   dir=$(shop_dir); date=$(today)
@@ -327,6 +332,7 @@ close_items() {
       *) ids="$ids $(resolve_id "$1")" || exit 1; shift ;;
     esac
   done
+  ref=$(oneline "$ref")
   if [ -n "$ref" ]; then
     ids="$ids $(all_records | REF="$ref" awk -F'\t' '$2 == "ordered" && $8 == ENVIRON["REF"] { print $1 }')"
     [ -n "${ids// /}" ] || die "no ordered items with order ref '$ref'"

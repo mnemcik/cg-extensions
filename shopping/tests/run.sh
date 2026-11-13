@@ -77,6 +77,11 @@ file_has "newline-free title" "$nl" 'title: "two lines here"'
 file_has "newline-free part" "$nl" 'part: "C1 C2"'
 rm -f "$nl"
 expect "add rejects blank title" 2 "$SHOP" add "   " -s lcsc
+expect "add rejects a date with a newline" 2 "$SHOP" add thing -s lcsc --needed-by "2026-01-01
+evil: 1"
+expect "add trims title" 0 "$SHOP" add "  Spaced  " -s trimshop
+file_has "title trimmed" "$(path_of 2026-11-13-spaced-)" 'title: "Spaced"'
+rm -f "$(path_of 2026-11-13-spaced-)"
 expect "add dev kit" 0 "$SHOP" add "Dev kit" -s DigiKey -p lamp --needed-by 2026-12-01
 
 # ---------------------------------------------------------------- list
@@ -210,6 +215,22 @@ printf -- '---\ntitle: "Odd"\nstatus: Needed\nsupplier: "odd"\nqty: 1\n---\n' >s
 expect "odd status" 0 "$SHOP" list --all --supplier odd
 contains "odd status header" "odd (1 Needed)"
 rm -f shopping/2026-11-12-odd.md
+
+# A group mixing known and unknown statuses lists the known ones first, in order.
+printf -- '---\ntitle: "A"\nstatus: ordered\nsupplier: "mix"\nqty: 1\n---\n' >shopping/2026-11-12-mix-a.md
+printf -- '---\ntitle: "B"\nstatus: needed\nsupplier: "mix"\nqty: 1\n---\n' >shopping/2026-11-12-mix-b.md
+printf -- '---\ntitle: "C"\nstatus: weird\nsupplier: "mix"\nqty: 1\n---\n' >shopping/2026-11-12-mix-c.md
+expect "mixed statuses" 0 "$SHOP" list --all --supplier mix
+contains "mixed header" "mix (1 needed, 1 ordered, 1 weird)"
+rm -f shopping/2026-11-12-mix-*.md
+
+# A newline in an order ref can't break the frontmatter.
+expect "add for newline ref" 0 "$SHOP" add "Tape" -s tapeshop
+expect "order newline ref" 0 "$SHOP" order tapeshop --ref "L1
+L2"
+file_has "newline ref flattened" "$(path_of 2026-11-13-tape-)" 'order_ref: "L1 L2"'
+expect "receive newline ref" 0 "$SHOP" receive --ref "L1
+L2"
 
 # A ref with a backslash matches literally.
 expect "add for backslash ref" 0 "$SHOP" add "Wick" -s wickshop
