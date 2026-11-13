@@ -8,9 +8,9 @@ When each project keeps its own buy list (usually a section of its `todo.md`), n
 
 ## Mechanism
 
-Each item is one markdown file, `shopping/<id>.md` at the root of the work tree, with its fields in YAML frontmatter (`title`, `status`, `supplier`, `qty`, `project`, `part`, `mpn`, `link`, `price`, `needed_by`, and the dates and order number `cg shop` records). The id is `<date>-<slug-of-title>`.
+Each item is one markdown file, `shopping/<id>.md` at the root of the work tree, with its fields in YAML frontmatter (`title`, `status`, `supplier`, `qty`, `project`, `part`, `mpn`, `link`, `price`, `needed_by`, and the dates and order number `cg shop` records). The id is `<date>-<slug-of-title>-<6 random hex digits>`, for example `2026-11-13-esp32-c6-module-3fa91c`; any unique prefix works on the command line.
 
-- **No conflicts between parallel sessions.** A new item is a new file, and a status change edits only that item's file. Two sessions adding items in separate worktrees land without conflicts (the test suite checks this). A single shared list file would conflict as soon as two sessions append to it.
+- **No conflicts between parallel sessions.** A new item is a new file with a random part in its name, and a status change edits only that item's file. Two sessions adding items in separate worktrees, even the same item on the same day, land without conflicts (the test suite checks this). A single shared list file would conflict as soon as two sessions append to it.
 - **In git, and plain text.** Items are committed like the rest of the workspace, so they travel with it, show in history, and are readable by any tool (Obsidian, an editor, `grep`).
 - **Views are computed, not stored.** `cg shop list` reads the files and groups them, so there is no index file to keep in sync.
 - **Status:** `needed` → `ordered` → `received`, or `cancelled`. Closed items stay as files, keeping the record of which project needed what.

@@ -17,7 +17,7 @@ Each item is a markdown file, `shopping/<id>.md` at the root of the work tree, w
 | `link`, `price`, `needed_by` | Optional |
 | `added`, `ordered`, `received`, `order_ref` | Set by `cg shop` |
 
-The id is `<added-date>-<slug-of-title>`, so items never collide between parallel sessions: a new item is a new file. Item files are workspace content like any other — **stage and commit them by name** with the session's work, or they never reach `main`.
+The id is `<added-date>-<slug-of-title>-<6 random hex digits>`. The random part is always there, so two sessions adding the same item on the same day still create different files, and lands never conflict. Item files are workspace content like any other — **stage and commit them by name** with the session's work, or they never reach `main`.
 
 ## Rules
 
