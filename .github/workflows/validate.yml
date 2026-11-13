@@ -110,3 +110,14 @@ jobs:
         run: |
           jq --version
           bash 1password/tests/run.sh
+
+  shopping-tests:
+    # macOS covers /bin/bash 3.2 and BSD tools; Ubuntu covers bash 5, GNU tools and mawk.
+    strategy:
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run the cg shop test suite
+        run: shopping/tests/run.sh

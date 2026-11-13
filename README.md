@@ -16,6 +16,7 @@ independently.
 | [`gh-account-resolver`](gh-account-resolver/) | Per-command `gh` account routing — a `PreToolUse` hook picks the right logged-in `gh` account per Bash command (via `.claude/gh-account-map`) so parallel sessions don't fight over global `gh` auth state. Fails open; zero global footprint. |
 | [`bundle-backup`](bundle-backup/) | Backs up the workspace as a `git bundle` to a folder (e.g. a synced company drive) after every commit, merge or rewrite — no git remote needed. Uses the `git-hooks` contribution point (cg 1.25+). |
 | [`obsidian`](obsidian/) | Makes the workspace work as an Obsidian vault — seeded vault config, per-machine state gitignored, a Bases view of active projects, and a note on the link/tag/Bases gotchas. Uses the `gitignore` contribution point. |
+| [`shopping`](shopping/) | One shared shopping list for the workspace — `cg shop` adds items from any project, groups open items by supplier so one order covers every project, and tracks needed → ordered → received. One file per item, so parallel sessions never conflict. |
 
 ## Install
 
