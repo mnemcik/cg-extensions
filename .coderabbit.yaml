@@ -1,0 +1,59 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+#
+# CodeRabbit config for mnemcik/cg-extensions.
+# Reference: https://docs.coderabbit.ai/guides/configure-coderabbit
+
+language: en-US
+early_access: false
+tone_instructions: |
+  Solo-maintained collection of Consigliere (cg) extensions: bash scripts, JSON
+  manifests and markdown rule content. Keep reviews concise and actionable.
+  Don't restate obvious things or add decorative commentary.
+
+reviews:
+  profile: chill
+  request_changes_workflow: true
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: false
+
+  path_instructions:
+    - path: "*/cg-extension.json"
+      instructions: |
+        Extension manifest, validated against the registry schema in CI. Flag a
+        `version` that wasn't bumped when the extension's shipped files changed,
+        paths in `contributes` that don't exist in the extension, and a CHANGELOG.md
+        without an entry for the new version.
+    - path: "*/bin/**"
+      instructions: |
+        Subcommand scripts run as `cg <namespace>`. Targets bash 3.2 (macOS) and
+        bash 5 (Linux) with POSIX awk/sed/sort; flag bashisms newer than 3.2, GNU-only
+        flags, unquoted expansions and missing error handling.
+    - path: "*/hooks/**"
+      instructions: |
+        Claude Code hook wrappers. They run on every matching tool call, so flag
+        anything slow, anything that can block a tool call by accident (non-zero exit,
+        stray stdout on events that parse JSON), and secret handling.
+    - path: "*/fragments/**"
+      instructions: |
+        CLAUDE.md sections installed into every workspace using the extension; they
+        load in every session. Flag growth that belongs in the extension's note
+        instead, and rules that contradict the Consigliere framework.
+    - path: "*/notes/**"
+      instructions: |
+        Rule notes installed into workspaces. Flag references to files, commands or
+        flags the extension doesn't ship.
+    - path: ".github/workflows/**"
+      instructions: |
+        Focus on secret handling and least-privilege permissions.
+        Third-party actions pinned by major version are acceptable.
+
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - main
+
+chat:
+  auto_reply: true
