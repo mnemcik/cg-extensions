@@ -66,6 +66,15 @@ See the Consigliere
 [extension authoring guide](https://github.com/mnemcik/consigliere/blob/main/EXTENSIONS.md)
 for the manifest reference and contribution points.
 
+## Upstream proposals
+
+A change that comes out of a workspace, such as an extension file a workspace edited or a local rule worth sharing, is an **upstream proposal**, not deliberate extension work. Opened by an agent under the maintainer's account, it looks like the maintainer's own PR, so it is marked and gated:
+
+- **Label `upstream-proposal`**, set when the PR is opened.
+- **Opened as a draft**, so it cannot be merged until someone marks it ready.
+- **Body from the upstream-proposal template**: `gh pr create --draft --label upstream-proposal --template upstream-proposal.md`. Its Origin and Impact sections say where the change comes from and what it changes for every workspace using the extension.
+- **The Upstream Proposal Gate check** fails while the PR has `upstream-proposal` and not `impact-reviewed`. Only the maintainer adds `impact-reviewed`, after reviewing the impact.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
