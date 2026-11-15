@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# cg-live-tee — CLAUDE_CODE_SHELL_PREFIX wrapper set by `cg live run`.
+#
+# Claude Code calls it as `cg-live-tee '<full shell invocation>'` for Bash tool
+# calls, hooks, the status line and stdio MCP startup. For Bash tool calls it
+# copies the command and its output, as it happens, to $CG_LIVE_CMD_LOG; Claude
+# still gets the same output and exit code. Everything else runs untouched.
+inv="$1"
+shell="${CLAUDE_CODE_SHELL:-${SHELL:-/bin/bash}}"
+
+# A Bash tool call looks like: source <snapshot> … && eval '<command>' < /dev/null && pwd -P >| <file>
+case "$inv" in
+  *"eval '"*) ;;
+  *) exec "$shell" -c "$inv" ;;
+esac
+[ -n "${CG_LIVE_CMD_LOG:-}" ] || exec "$shell" -c "$inv"
+
+cmd="${inv#*eval \'}"
+cmd="${cmd%\' < /dev/null*}"
+q="'"
+cmd="${cmd//"'\\''"/$q}"   # un-escape '\'' back to ' (same in bash 3.2 and 5)
+printf '\n\033[1;36m━━ %s  $ %s\033[0m\n' "$(date +%H:%M:%S)" "$cmd" >> "$CG_LIVE_CMD_LOG"
+
+# Claude Code merges stdout and stderr anyway, so merging here changes nothing it sees.
+"$shell" -c "$inv" 2>&1 | tee -a "$CG_LIVE_CMD_LOG"
+rc=${PIPESTATUS[0]}
+printf '\033[2m━━ %s  exit %s\033[0m\n' "$(date +%H:%M:%S)" "$rc" >> "$CG_LIVE_CMD_LOG"
+exit "$rc"

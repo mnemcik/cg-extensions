@@ -1,0 +1,174 @@
+#!/usr/bin/env bash
+# cg-live — `cg live run` and `cg live watch` (the live-runs extension).
+#
+#   cg live run <label> <claude args…>
+#       Runs `claude -p --output-format stream-json --verbose <claude args…>`.
+#       stdout: the final result event as one JSON object (the shape
+#       `--output-format json` prints); exit code: claude's.
+#       Logs, in $CG_LIVE_DIR (default ~/.cache/cg-live):
+#         <stamp>-<label>.events.jsonl  every event, with a _ts timestamp
+#         <stamp>-<label>.cmd.log       live output of every shell command
+#         latest.events.jsonl / latest.cmd.log -> the newest run
+#       Inside tmux it opens `cg live watch` as a split of the calling pane, once
+#       per window; elsewhere it prints how to watch. CG_LIVE_NO_WATCH=1: neither.
+#
+#   cg live watch [--events | --cmds] [--once] [events.jsonl | cmd.log]
+#       Follows the latest run (and newer ones) or the given file: agent text,
+#       each tool call and the start of its result, live command output, and
+#       the final turns / time / cost. --once prints what is there and exits.
+#       WATCH_LINES (default 12): lines per tool result; WATCH_THINKING=1: thinking.
+set -uo pipefail
+
+here="$(cd "$(dirname "$0")" && pwd)"
+dir="${CG_LIVE_DIR:-$HOME/.cache/cg-live}"
+
+die() { echo "cg live: $*" >&2; exit 2; }
+need() { command -v "$1" >/dev/null 2>&1 || die "$1 is required but not on PATH"; }
+
+usage() {
+  cat >&2 <<'U'
+usage: cg live run <label> <claude args…>
+       cg live watch [--events | --cmds] [--once] [file]
+U
+  exit 2
+}
+
+# ---------------------------------------------------------------- run
+live_run() {
+  [ $# -ge 2 ] || usage
+  need jq
+  local claude="${CG_LIVE_CLAUDE:-claude}"
+  need "$claude"
+  local label
+  label=$(printf '%s' "$1" | tr -c 'A-Za-z0-9._-' '-')
+  shift
+  mkdir -p "$dir" || die "cannot create $dir"
+  local base events cmdlog
+  base="$dir/$(date +%Y%m%d-%H%M%S)-$label"
+  events="$base.events.jsonl"
+  cmdlog="$base.cmd.log"
+  : > "$events" && : > "$cmdlog" || die "cannot write logs in $dir"
+  ln -sfn "$events" "$dir/latest.events.jsonl"
+  ln -sfn "$cmdlog" "$dir/latest.cmd.log"
+  echo "cg live: $label -> $base.{events.jsonl,cmd.log}" >&2
+  open_viewer
+
+  # Every shell command of the run goes through cg-live-tee (only for this claude).
+  # PYTHONUNBUFFERED: test runners write to a pipe here; make their lines appear as they happen.
+  PYTHONUNBUFFERED=1 CG_LIVE_CMD_LOG="$cmdlog" CLAUDE_CODE_SHELL_PREFIX="$here/cg-live-tee" \
+    "$claude" -p --output-format stream-json --verbose "$@" </dev/null \
+    | jq -c --unbuffered -R '(fromjson? // {type:"raw", line:.}) + {_ts: now}' >> "$events"
+  local rc=${PIPESTATUS[0]}
+
+  jq -c 'select(.type=="result") | del(._ts)' "$events" | tail -n 1
+  return "$rc"
+}
+
+open_viewer() {
+  [ "${CG_LIVE_NO_WATCH:-}" = 1 ] && return 0
+  if [ -n "${TMUX:-}" ] && [ -n "${TMUX_PANE:-}" ] && command -v tmux >/dev/null 2>&1; then
+    if ! tmux list-panes -t "$TMUX_PANE" -F '#{@cg_live_watch}' 2>/dev/null | grep -q 1; then
+      local pane
+      if pane=$(tmux split-window -h -d -l 45% -t "$TMUX_PANE" -P -F '#{pane_id}' \
+                  "CG_LIVE_DIR='$dir' '$here/cg-live' watch"); then
+        tmux set-option -p -t "$pane" @cg_live_watch 1
+      else
+        echo "cg live: could not split the tmux pane; watch with: cg live watch" >&2
+      fi
+    fi
+  else
+    echo "cg live: watch with: cg live watch" >&2
+  fi
+}
+
+# ---------------------------------------------------------------- watch
+read -r -d '' FMT <<'JQ'
+def c(code): "\u001b[" + code + "m";
+def r: c("0");
+def ts: (._ts // now) | localtime | strftime("%H:%M:%S");
+def clip($n): if length > $n then .[0:$n] + "…" else . end;
+def lines($n): split("\n") | if length > $n then .[0:$n] + ["… (\(length - $n) more lines)"] else . end | join("\n");
+def ind: if .parent_tool_use_id then "    ↳ " else "" end;
+def tooltxt:
+  if .name == "Bash" then .input.command + (if .input.run_in_background then "   (background)" else "" end)
+  elif (.name | test("^(Read|Write|Edit|NotebookEdit)$")) then
+    .input.file_path + (if .name == "Edit" then "  (−\(.input.old_string|split("\n")|length) +\(.input.new_string|split("\n")|length) lines)"
+                        elif .name == "Write" then "  (\(.input.content|split("\n")|length) lines)" else "" end)
+  elif .name == "Grep" or .name == "Glob" then .input.pattern + (if .input.path then "  in " + .input.path else "" end)
+  elif .name == "Skill" then .input.skill + " " + ((.input.args // "") | clip(200))
+  elif .name == "Agent" or .name == "Task" then (.input.description // "") + " — " + ((.input.prompt // "") | clip(200))
+  else (.input | tojson | clip(300)) end;
+def restxt:
+  if (.content | type) == "string" then .content
+  else [.content[]? | select(.type == "text") | .text] | join("\n") end;
+
+foreach inputs as $e ({tools: {}};
+  if $e.type == "assistant" then
+    .tools += ([$e.message.content[]? | select(.type == "tool_use") | {(.id): .name}] | add // {})
+  else . end;
+  . as $s | $e |
+  if .type == "system" and .subtype == "init" then
+    "\(c("1;35"))\(ts) ▶ run started  model \(.model)  cwd \(.cwd)\n   session \(.session_id)\(r)"
+  elif .type == "assistant" then
+    . as $m | [.message.content[]? |
+      if .type == "text" then "\(c("1"))\($m|ts) \($m|ind)● \(.text)\(r)"
+      elif .type == "thinking" and ($ENV.WATCH_THINKING // "") == "1" and (.thinking // "") != "" then
+        "\(c("2;3"))\($m|ts) \($m|ind)💭 \(.thinking | clip(600))\(r)"
+      elif .type == "tool_use" then "\(c("33"))\($m|ts) \($m|ind)⚙ \(.name)\(r)  \(tooltxt)"
+      else empty end] | join("\n")
+  elif .type == "user" then
+    . as $m | [.message.content[]? | select(.type == "tool_result") |
+      ($s.tools[.tool_use_id] // "?") as $name |
+      (if .is_error then c("31") + "✗" else c("32") + "✓" end) as $mark |
+      if $name == "Bash" and (.is_error | not) then "\($mark) \($name) done\(r)"
+      else "\($mark) \($name)\(r)\n" + (restxt | lines(($ENV.WATCH_LINES // "12") | tonumber) | split("\n") | map("     " + .) | join("\n")) end
+      | "\($m|ts) \($m|ind)" + .] | join("\n")
+  elif .type == "result" then
+    "\(c("1;35"))\(ts) ■ run finished: \(.subtype)\(if .is_error then " (ERROR)" else "" end)  turns \(.num_turns)  \((.duration_ms // 0) / 60000 * 10 | floor / 10) min  $\((.total_cost_usd // 0) * 100 | round / 100)\(r)"
+  elif .type == "raw" then "\(c("2"))\(ts) \(.line)\(r)"
+  else empty end
+  | select(. != ""))
+JQ
+
+live_watch() {
+  need jq
+  local mode=both once=0
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --events) mode=events; shift ;;
+      --cmds) mode=cmds; shift ;;
+      --once) once=1; shift ;;
+      -*) usage ;;
+      *) break ;;
+    esac
+  done
+  local events cmdlog
+  if [ "$mode" = cmds ]; then
+    cmdlog="${1:-$dir/latest.cmd.log}"
+  else
+    events="${1:-$dir/latest.events.jsonl}"
+    cmdlog="${events%.events.jsonl}.cmd.log"
+  fi
+  src() { if [ "$once" = 1 ]; then cat "$1" 2>/dev/null; else tail -n +1 -F "$1" 2>/dev/null; fi; }
+  fmt() { jq -rn --unbuffered "$FMT"; }
+  case "$mode" in
+    events) src "$events" | fmt ;;
+    cmds)   src "$cmdlog" ;;
+    both)
+      if [ "$once" = 1 ]; then
+        src "$events" | fmt
+        src "$cmdlog" | sed 's/^/   │ /'
+      else
+        trap 'kill 0' INT TERM EXIT
+        src "$events" | fmt &
+        src "$cmdlog" | sed -u 's/^/   │ /' &
+        wait
+      fi ;;
+  esac
+}
+
+case "${1:-}" in
+  run) shift; live_run "$@" ;;
+  watch) shift; live_watch "$@" ;;
+  *) usage ;;
+esac
