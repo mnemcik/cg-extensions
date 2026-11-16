@@ -97,7 +97,7 @@ def gh_page(path: str) -> list:
     return json.loads(run_gh(["api", path]))
 
 
-STATS = {"keyset_requests": 0, "offset_fallbacks": 0, "unverified_seconds": []}
+STATS = {"keyset_requests": 0, "offset_fallbacks": 0, "stalled_seconds": [], "unverified_seconds": []}
 FALLBACK_READS = 5  # max offset reads of one stalled second before giving up
 
 
@@ -149,6 +149,7 @@ def gh_since_keyset(path: str, since: dt.datetime) -> list:
         # Stalled: a full page within one second. Read that second by page number until
         # two consecutive reads agree.
         STATS["offset_fallbacks"] += 1
+        STATS["stalled_seconds"].append(iso(cur))
         prev = None
         for _ in range(FALLBACK_READS):
             seq, n = [], 1
@@ -469,7 +470,7 @@ def main() -> int:
         "review_calls": review_calls,
         "orphaned_events": orphans,
         "keyset_requests": STATS["keyset_requests"], "offset_fallbacks": STATS["offset_fallbacks"],
-        "unverified_seconds": STATS["unverified_seconds"],
+        "stalled_seconds": STATS["stalled_seconds"], "unverified_seconds": STATS["unverified_seconds"],
         "releases": [r["tag_name"] for r in releases], "merged_prs": len(merged),
         "chunks": chunk_index, "out": str(out.resolve()),
     }

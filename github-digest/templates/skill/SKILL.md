@@ -35,7 +35,7 @@ If the user names a repo that has no target, offer to create one (see *Adding a 
    - `summary.md`: counts, releases, merged PRs, and the list of rolled-up threads
    - `chunk-NN.md`: per-thread text, about 60k characters each. Each thread holds the opening post when the thread is new, then every human comment, review and review-line comment in the window, oldest first, quoted with `> `. Bot comments are collapsed to one count line.
    - `raw/*.json`: the unmodified API results
-   - `manifest.json`: `cursor_in`, `cursor_out`, the thread numbers in each chunk, `review_calls`, `keyset_requests`, `offset_fallbacks`, `unverified_seconds`, and `orphaned_events` (comments whose thread wasn't in the issue list; the next run's overlap catches them)
+   - `manifest.json`: `cursor_in`, `cursor_out`, the thread numbers in each chunk, `review_calls`, `keyset_requests`, `offset_fallbacks`, `stalled_seconds`, `unverified_seconds`, and `orphaned_events` (comments whose thread wasn't in the issue list; the next run's overlap catches them)
 
    If `gh` fails (404, auth, rate limit), the script prints gh's error and exits 1. Report it; don't retry blindly.
 6. **Read** `summary.md`, then every chunk, with the file-read tool (not `cat`). Write one `batch-NN.md` per chunk into `notes/<slug>-digest-YYYY-MM-DD/`. If that folder already exists from an earlier digest the same day, use `notes/<slug>-digest-YYYY-MM-DDb/` (then `c`, …). Never overwrite a digest the history table points to.
@@ -69,7 +69,7 @@ If the user names a repo that has no target, offer to create one (see *Adding a 
 
 ## Not covered
 
-- **Exhaustive coverage of a stalled second.** A stalled second has 100 or more items updated within it, as after a bulk label or a migration. It is read by page number and accepted when two reads agree. That proves coverage only if GitHub returns tied items in a stable order, which its docs don't state. If the order were unstable and an item changed mid-read, both reads could skip the same item. Holding the cursor at every stalled second instead would stop the digest moving past any bulk operation. When `offset_fallbacks` > 0, say in Data Caveats that those seconds rely on this assumption.
+- **Exhaustive coverage of a stalled second.** A stalled second has 100 or more items updated within it, as after a bulk label or a migration. It is read by page number and accepted when two reads agree. That proves coverage only if GitHub returns tied items in a stable order, which its docs don't state. If the order were unstable and an item changed mid-read, both reads could skip the same item. Holding the cursor at every stalled second instead would stop the digest moving past any bulk operation. When `offset_fallbacks` > 0, name the seconds listed in the manifest's `stalled_seconds` in Data Caveats as relying on this assumption.
 - **Commits pushed straight to the default branch without a PR.** If a repo works that way, add `gh api 'repos/O/R/commits?since=<cursor>'` by hand and say so in Data Caveats.
 - **Reactions, project-board moves, and timeline events** such as labelled, assigned or cross-referenced.
 - **Discussion comments beyond the last 50 per discussion, or the last 20 replies per comment.**

@@ -46,7 +46,7 @@ class Keyset(unittest.TestCase):
     def setUp(self):
         self._run_gh, self._page = w.run_gh, w.PAGE
         w.PAGE = 2
-        w.STATS.update(keyset_requests=0, offset_fallbacks=0, unverified_seconds=[])
+        w.STATS.update(keyset_requests=0, offset_fallbacks=0, stalled_seconds=[], unverified_seconds=[])
 
     def tearDown(self):
         w.run_gh, w.PAGE = self._run_gh, self._page
@@ -94,6 +94,7 @@ class Keyset(unittest.TestCase):
         api = FakeAPI([(i, 20) for i in range(1, 6)] + [(9, 40)])
         self.assertEqual(self.fetch(api), [1, 2, 3, 4, 5, 9])
         self.assertEqual(w.STATS["offset_fallbacks"], 1)
+        self.assertEqual(w.STATS["stalled_seconds"], [at(20)])
 
 
     def test_deletion_during_fallback_is_recovered(self):
