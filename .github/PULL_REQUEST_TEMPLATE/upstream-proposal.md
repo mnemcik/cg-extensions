@@ -17,6 +17,6 @@ What this PR changes in the framework.
 ## Test plan
 
 - [ ] The extension's own tests pass (`<name>/tests/run.sh`, if it has them)
-- [ ] Opened as a draft with the `upstream-proposal` label; `impact-reviewed` is added by the maintainer only
+- [ ] Opened as a draft with the `upstream-proposal` label
 
-See [README.md](https://github.com/mnemcik/cg-extensions/blob/main/README.md#upstream-proposals) for what the label and the gate do.
+See [README.md](https://github.com/mnemcik/cg-extensions/blob/main/README.md#how-a-pr-gets-to-merge) for the impact review and the `impact-review` check.
