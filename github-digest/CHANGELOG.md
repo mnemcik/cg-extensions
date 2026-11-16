@@ -15,6 +15,8 @@ All notable changes to this extension are documented here. Format follows
   - releases
   - GraphQL discussions
 
-  It writes `summary.md`, per-thread `chunk-NN.md` files, `raw/*.json` and `manifest.json`. Bot-only threads are rolled up rather than narrated.
+  It writes `summary.md`, per-thread `chunk-NN.md` files, `raw/*.json` and `manifest.json`. Threads with no human comment, review, open or close in the window are rolled up rather than narrated, bot comments collapse to one count line, and a thread longer than a chunk is split.
+- **Keyset pagination** for the three since-windowed lists. Requests run oldest first, and each request's `since` is the newest `updated_at` already seen, so a deletion mid-run can't skip an item. A second with 100 or more items falls back to page numbers, verified by re-reading until two reads agree. Those seconds are listed in `stalled_seconds`. If the reads never agree, the cursor is held before the second (`unverified_seconds`).
+- Offline unit tests (`tests/`), run in CI on macOS, Ubuntu and Windows.
 - `templates/github-digest-target.md`, the per-repo target format, holding the Cursor and the Digest History.
 - Repository content is treated as data, never instructions. The skill says so for the agent and for every batch and merge subagent, and each chunk file opens with the same notice.
