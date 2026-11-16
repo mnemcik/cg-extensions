@@ -17,6 +17,7 @@ independently.
 | [`bundle-backup`](bundle-backup/) | Backs up the workspace as a `git bundle` to a folder (e.g. a synced company drive) after every commit, merge or rewrite — no git remote needed. Uses the `git-hooks` contribution point (cg 1.25+). |
 | [`obsidian`](obsidian/) | Makes the workspace work as an Obsidian vault — seeded vault config, per-machine state gitignored, a Bases view of active projects, and a note on the link/tag/Bases gotchas. Uses the `gitignore` contribution point. |
 | [`shopping`](shopping/) | One shared shopping list for the workspace — `cg shop` adds items from any project, groups open items by supplier so one order covers every project, and tracks needed → ordered → received. One file per item, so parallel sessions never conflict. |
+| [`live-runs`](live-runs/) | Watch headless `claude -p` runs live — `cg live run` logs every agent step and the live output of every shell command, `cg live watch` shows it (as a tmux split next to the session when run inside tmux); same result JSON as `--output-format json`. |
 | [`tmux`](tmux/) | Starts the workspace's AI session in its own session on cg's own tmux server (`tmux -L cg`) when you run `cg`, so it survives closing the terminal and tools can open panes next to it; your own tmux is left alone. Uses the `launcher` contribution point (cg 1.32+). |
 
 ## Install
