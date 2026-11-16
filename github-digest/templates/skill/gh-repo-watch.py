@@ -134,6 +134,7 @@ def gh_since_keyset(path: str, since: dt.datetime) -> list:
     run reads it again rather than advancing past a possible gap.
     """
     sep = "&" if "?" in path else "?"
+    k = max(1, min(LAG_TOLERANCE, PAGE // 2))  # out-of-place items tolerated per page
     seen, items = set(), []
     cur = since
 
@@ -153,13 +154,22 @@ def gh_since_keyset(path: str, since: dt.datetime) -> list:
         take(page)
         if len(page) < PAGE:
             return items
-        stamps = sorted(ts(i["updated_at"]) for i in page)
-        newest = stamps[-max(1, min(LAG_TOLERANCE, len(stamps) // 2))]
-        if newest > cur:
-            cur = newest
+        # Only stamps past the cursor count: a returned updated_at can also be older
+        # than the item's place in the order, and those must not hold the cursor back.
+        stamps = [ts(i["updated_at"]) for i in page]
+        later = sorted(s for s in stamps if s > cur)
+        if len(later) >= k:
+            cur = later[-k]
             continue
-        # Stalled: fewer than k items past the cursor's second, so it can't advance. Read that second by page number until
-        # two consecutive reads agree.
+        ties = sum(s == cur for s in stamps)
+        if later and ties * 2 < len(page) - len(later):
+            # Most of the rest report a time before the cursor, not a tie: step to the
+            # oldest stamp past it, which can't skip anything.
+            cur = later[0]
+            continue
+        # Stalled: fewer than k items past the cursor's second (a bulk change put most
+        # of the page in one second), so the cursor can't advance. Read that second by
+        # page number until two consecutive reads agree.
         STATS["offset_fallbacks"] += 1
         STATS["stalled_seconds"].append(iso(cur))
         prev = None
@@ -170,7 +180,9 @@ def gh_since_keyset(path: str, since: dt.datetime) -> list:
                 STATS["keyset_requests"] += 1
                 take(more)
                 seq += [i["id"] for i in more if ts(i["updated_at"]) <= cur]
-                if len(more) < PAGE or max(ts(i["updated_at"]) for i in more) > cur:
+                # The read has left the second once k items on a page are past it; one
+                # out-of-place item past it doesn't count, for the same reason as above.
+                if len(more) < PAGE or sum(ts(i["updated_at"]) > cur for i in more) >= k:
                     break
                 n += 1
             if seq == prev:
