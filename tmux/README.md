@@ -8,7 +8,7 @@ An AI session started straight in a terminal tab lives and dies with that tab. C
 
 ## Mechanism
 
-The extension contributes a `launcher` (cg 1.31+). `cg start` then runs `bin/cg-tmux launch -- <agent…>` instead of the agent (`session.agent` in `.cg.json`, default `claude`), and `cg-tmux`:
+The extension contributes a `launcher` (cg 1.32+). `cg start` then runs `bin/cg-tmux launch -- <agent…>` instead of the agent (`session.agent` in `.cg.json`, default `claude`), and `cg-tmux`:
 
 - starts the agent in a **new tmux session** named `<agent>-<directory>-<HHMMSS>`, in the current directory, so every `cg` gets its own session and parallel sessions stay separate. Quitting the agent ends the tmux session.
 - uses the bundled **`tmux.conf`** when it starts the tmux server: mouse on, 100k lines of history, `escape-time 10` (Esc reaches the agent at once instead of after tmux's default 500 ms), extended keys, true colour. A tmux server that is already running keeps its own settings, and `~/.tmux.conf` is not read for it.
@@ -33,7 +33,7 @@ Inside tmux, `Ctrl+B` is tmux's prefix key: Claude Code's own `Ctrl+B` (move a c
 
 ## Requirements
 
-- cg 1.31+ (the `launcher` contribution point); an older cg installs the extension but ignores the launcher.
+- cg 1.32+ (the `launcher` contribution point). An older cg installs the extension but ignores the launcher; after upgrading cg, run `cg extension update tmux` to get it.
 - tmux (3.x); without it, `cg` starts the agent directly and says so.
 - macOS or Linux.
 
