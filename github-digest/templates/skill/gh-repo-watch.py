@@ -161,15 +161,15 @@ def gh_since_keyset(path: str, since: dt.datetime) -> list:
             cur = later[-k]
             continue
         # Stalled: fewer than k items past the cursor's second, so the cursor can't
-        # advance safely: usually a bulk change put most of the page in one second; it
-        # also happens if most stamps are older than the cursor, which costs extra
-        # requests but loses nothing (stepping to a lone stamp past the cursor could). Read that second by
-        # page number until two consecutive reads agree.
+        # advance safely. Usually a bulk change put most of the page in one second; it
+        # also happens when most stamps are older than the cursor. Stepping to a lone
+        # stamp past the cursor could skip items, so read that second by page number
+        # until two consecutive reads agree, then advance from the page that ended it.
         STATS["offset_fallbacks"] += 1
         STATS["stalled_seconds"].append(iso(cur))
-        prev = None
+        prev, exit_later = None, []
         for _ in range(FALLBACK_READS):
-            seq, n = [], 1
+            seq, n, exit_later = [], 1, []
             while True:
                 more = gh_page(q if n == 1 else f"{q}&page={n}")
                 STATS["keyset_requests"] += 1
@@ -177,7 +177,9 @@ def gh_since_keyset(path: str, since: dt.datetime) -> list:
                 seq += [i["id"] for i in more if ts(i["updated_at"]) <= cur]
                 # The read has left the second once k items on a page are past it; one
                 # out-of-place item past it doesn't count, for the same reason as above.
-                if len(more) < PAGE or sum(ts(i["updated_at"]) > cur for i in more) >= k:
+                past = sorted(s for s in (ts(i["updated_at"]) for i in more) if s > cur)
+                if len(more) < PAGE or len(past) >= k:
+                    exit_later = past
                     break
                 n += 1
             if seq == prev:
@@ -185,7 +187,12 @@ def gh_since_keyset(path: str, since: dt.datetime) -> list:
             prev = seq
         else:
             STATS["unverified_seconds"].append(iso(cur))
-        cur = cur + dt.timedelta(seconds=1)
+        # Advance like the main loop: the page that ended the read holds k stamps past
+        # the cursor, so its k-th newest is safe by the same argument. Without one (a
+        # short last page), step one second. Stepping only 1 s every time made a page of
+        # mostly older stamps crawl through a long gap one second per fallback.
+        nxt = cur + dt.timedelta(seconds=1)
+        cur = max(nxt, exit_later[-k]) if len(exit_later) >= k else nxt
 
 
 def fetch_releases(base: str, since: dt.datetime) -> list:

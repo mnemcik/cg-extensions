@@ -126,6 +126,17 @@ class Keyset(unittest.TestCase):
         self.assertEqual(self.fetch(api), list(range(1, 30)))
         self.assertEqual(w.STATS["offset_fallbacks"], 0)
 
+    def test_mostly_older_stamps_before_a_long_gap_do_not_crawl(self):
+        # Items an hour apart; items 11..19 report second 1. The page that holds them
+        # stalls, and stepping 1 s after each stalled read crawled through every second
+        # of the gap (144,009 requests). Advancing from the page that ended the read
+        # must keep it to a handful.
+        w.PAGE = 10
+        items = [(i, 3600 * i) for i in range(1, 40)]
+        api = FakeAPI(items, reported={i: 1 for i in range(11, 20)})
+        self.assertEqual(self.fetch(api), list(range(1, 40)))
+        self.assertLess(w.STATS["keyset_requests"], 50)
+
     def test_mostly_older_stamps_and_one_far_ahead_skip_nothing(self):
         # A page of stamps older than the cursor plus one far ahead must not move the
         # cursor to the far-ahead stamp: the slow stalled-second read is accepted instead.
