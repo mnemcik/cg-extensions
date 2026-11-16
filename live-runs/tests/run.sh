@@ -109,7 +109,8 @@ expect "watch cmds only" 0 "$LIVE" watch --cmds --once
 contains "cmds only" "$(printf '%s' "$out" | strip)" "exit 4"
 
 # --- private logs; no collision between runs in the same second ---
-mode() { stat -f %Lp "$1" 2>/dev/null || stat -c %a "$1"; }
+# GNU stat first: BSD stat rejects -c, while GNU stat accepts -f (filesystem info) and would print junk.
+mode() { stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1"; }
 [ "$(mode "$T/runs")" = 700 ] && ok || bad "log dir mode $(mode "$T/runs"), want 700"
 [ "$(mode "$(readlink "$ev")")" = 600 ] && ok || bad "events file mode $(mode "$(readlink "$ev")"), want 600"
 [ "$(mode "$(readlink "$cl")")" = 600 ] && ok || bad "cmd log mode $(mode "$(readlink "$cl")"), want 600"
