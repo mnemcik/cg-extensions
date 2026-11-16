@@ -164,6 +164,44 @@ class EndToEnd(unittest.TestCase):
             self.assertEqual(m["chunks"][0]["threads"], [7])
 
 
+class Cli(unittest.TestCase):
+    def run_main(self, *argv):
+        import contextlib, io, sys
+        old = sys.argv
+        try:
+            sys.argv = ["gh-repo-watch.py", *argv]
+            with contextlib.redirect_stderr(io.StringIO()):
+                with self.assertRaises(SystemExit) as cm:
+                    w.main()
+            return cm.exception.code
+        finally:
+            sys.argv = old
+
+    def test_bad_repo_and_since_are_usage_errors(self):
+        self.assertEqual(self.run_main("norepo", "--since", "1d", "--out", "x"), 2)
+        self.assertEqual(self.run_main("o/r", "--since", "yesterday", "--out", "x"), 2)
+
+    def test_cursor_out_is_a_whole_second_in_the_past(self):
+        import contextlib, io, sys, tempfile
+        old_run, old_argv = w.run_gh, sys.argv
+        def fake(args):
+            if args[:2] == ["api", "graphql"]:
+                return json.dumps({"data": {"repository": {"discussions": {
+                    "pageInfo": {"hasNextPage": False, "endCursor": None}, "nodes": []}}}})
+            return json.dumps([[]]) if "--slurp" in args else json.dumps([])
+        with tempfile.TemporaryDirectory() as d:
+            try:
+                w.run_gh = fake
+                sys.argv = ["gh-repo-watch.py", "o/r", "--since", "1d", "--out", d]
+                before = dt.datetime.now(dt.timezone.utc).replace(microsecond=0)
+                with contextlib.redirect_stdout(io.StringIO()):
+                    w.main()
+            finally:
+                w.run_gh, sys.argv = old_run, old_argv
+            m = json.loads((pathlib.Path(d) / "manifest.json").read_text(encoding="utf-8"))
+            self.assertLess(w.ts(m["cursor_out"]), before)
+
+
 class Paginate(unittest.TestCase):
     def test_dedupes_by_id(self):
         old = w.run_gh

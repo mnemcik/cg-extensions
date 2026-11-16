@@ -255,9 +255,17 @@ def main() -> int:
     ap.add_argument("--count-only", action="store_true", help="fetch issues/PRs only, print counts")
     a = ap.parse_args()
 
+    if not re.fullmatch(r"[\w.-]+/[\w.-]+", a.repo):
+        ap.error(f"repo must be OWNER/REPO, got {a.repo!r}")
     owner, name = a.repo.split("/", 1)
-    since = parse_since(a.since)
-    cursor_out = dt.datetime.now(dt.timezone.utc)  # taken before fetching: overlap, never a gap
+    try:
+        since = parse_since(a.since)
+    except ValueError:
+        ap.error(f"--since must be an ISO time, a Unix epoch or Nd, got {a.since!r}")
+    # Taken before fetching, and rounded down to a whole second minus one: timestamps
+    # are whole seconds and the next run keeps only updates after this cursor, so an
+    # update later in the current second must still fall after it. Overlap, never a gap.
+    cursor_out = dt.datetime.now(dt.timezone.utc).replace(microsecond=0) - dt.timedelta(seconds=1)
     out = Path(a.out)
     (out / "raw").mkdir(parents=True, exist_ok=True)
     base = f"repos/{owner}/{name}"

@@ -61,6 +61,8 @@ python3 "$(git rev-parse --show-toplevel)/.claude/skills/github-digest/gh-repo-w
 - **Some activity is not covered:** reactions, project-board moves, and timeline events such as labelled or assigned.
 - **Discussions are read only partly:** the last 50 comments, with up to 20 replies each. Comment edits that don't bump the discussion's `updatedAt` are missed.
 
+This is a summary. The full list, including the stalled-second and open-bot-PR cases, is under **Not covered** in [`templates/skill/SKILL.md`](templates/skill/SKILL.md).
+
 ## Coming from `gmail-digest`
 
 If you digested a repo through `gmail-digest`, you can move it here without a gap:
