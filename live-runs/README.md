@@ -36,7 +36,7 @@ cg live watch --once <file>   # replay a finished run
 
 - cg 1.30.2 or later: older cg doesn't find a subcommand in a subfolder of this repo.
 - `claude` (Claude Code) and `jq` on PATH; macOS or Linux.
-- The logs hold full transcripts and every command's output. They are private to you (directory `700`, files `600`), and nothing removes them: delete `~/.cache/cg-live/` when you no longer need them.
+- The logs hold full transcripts and every command's output. They are private to you (the files are `600`; a directory cg live creates is `700`, an existing one keeps its mode), and nothing removes them: delete `~/.cache/cg-live/` when you no longer need them.
 - Optional: tmux, for the automatic split (see the `tmux` extension). Without it, run `cg live watch` yourself.
 
 ## Tests

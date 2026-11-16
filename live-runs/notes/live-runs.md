@@ -15,7 +15,7 @@ Load when starting, watching or debugging a headless `claude -p` run.
 
 `$CG_LIVE_DIR` (default `~/.cache/cg-live/`) keeps every run: `<stamp>-<label>.events.jsonl` (one event per line, `_ts` added), `<stamp>-<label>.cmd.log` (each shell command with a header, its output, its exit code), and `latest.*` symlinks to the newest run. The stamp includes the process ID, so two runs in the same second don't collide.
 
-The logs hold **full transcripts and the output of every command** (anything the agent read or printed, secrets included). They are created private (directory `700`, files `600`) and **nothing removes them**: delete old runs yourself.
+The logs hold **full transcripts and the output of every command** (anything the agent read or printed, secrets included). They are created private (files `600`; a directory cg live creates is `700`, an existing one keeps its mode) and **nothing removes them**: delete old runs yourself.
 
 ## Environment
 

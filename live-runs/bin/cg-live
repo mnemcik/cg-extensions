@@ -19,8 +19,9 @@
 #       --until-pane ID: exit when that tmux pane closes (the split viewer uses
 #       it, so quitting the agent also ends the viewer and the session).
 #       WATCH_LINES (default 12): lines per tool result; WATCH_THINKING=1: thinking.
-#   Logs hold full transcripts and command output: the directory is created
-#   mode 700 and every file 600; nothing removes old runs.
+#   Logs hold full transcripts and command output: a directory cg live creates
+#   gets mode 700 (an existing one keeps its own), every log file 600; nothing
+#   removes old runs.
 set -uo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -48,7 +49,8 @@ live_run() {
   label=$(printf '%s' "$1" | tr -c 'A-Za-z0-9._-' '-')
   shift
   # Private logs, without changing the umask claude and its tools run with.
-  mkdir -p "$dir" && chmod 700 "$dir" || die "cannot create $dir"
+  # A directory that already exists keeps its mode (it may be shared on purpose).
+  [ -d "$dir" ] || { mkdir -p "$dir" && chmod 700 "$dir"; } || die "cannot create $dir"
   local base events cmdlog
   base="$dir/$(date +%Y%m%d-%H%M%S)-$$-$label"
   events="$base.events.jsonl"

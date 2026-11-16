@@ -132,6 +132,12 @@ contains "literal '\\'' kept" "$(strip < "$T/lit.log")" "\$ $lit"
 "$LIVE" run same -- x >/dev/null 2>&1; "$LIVE" run same -- x >/dev/null 2>&1
 [ "$(ls "$T/runs" | grep -c -- '-same.events.jsonl$')" = 2 ] && ok || bad "two same-label runs share a log: $(ls "$T/runs")"
 
+# --- an existing log directory keeps its own mode; the files are still private ---
+mkdir -p "$T/shared"; chmod 755 "$T/shared"
+expect "existing dir" 3 env CG_LIVE_DIR="$T/shared" "$LIVE" run keep -- x
+[ "$(mode "$T/shared")" = 755 ] && ok || bad "existing log dir changed to $(mode "$T/shared"), want it kept at 755"
+[ "$(mode "$(readlink "$T/shared/latest.events.jsonl")")" = 600 ] && ok || bad "log file in an existing dir is not 600"
+
 # --- stopping a background viewer kills only the viewer, not its caller ---
 o=$(bash -c '"$0" watch "$1" >/dev/null 2>&1 & p=$!; sleep 1; kill -TERM $p; wait $p; echo caller-survived' "$LIVE" "$(readlink "$ev")" 2>&1)
 contains "kill scope" "$o" "caller-survived"
