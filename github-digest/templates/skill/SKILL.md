@@ -52,7 +52,7 @@ If the user names a repo that has no target, offer to create one (see *Adding a 
 ## How the fetcher selects
 
 - **Endpoints:**
-  - `issues` (issues and PRs), `issues/comments` and `pulls/comments`, each with `since`, `sort=updated`, `direction=desc`. Pages are offsets into a live list. Newest-first plus dedupe by id means an item that changes mid-run causes repeats, not gaps; the changed item itself falls after `cursor_out`, so the next run picks it up. An item that disappears mid-run (deleted or transferred) would make the next one skip, so each of these lists is read twice and merged. `reconciled_by_second_pass` in the manifest counts what the second read added.
+  - `issues` (issues and PRs), `issues/comments` and `pulls/comments`, each with `since`, `sort=updated`, `direction=desc`. Pages are offsets into a live list. Newest-first plus dedupe by id means an item that changes mid-run causes repeats, not gaps; the changed item itself falls after `cursor_out`, so the next run picks it up. An item that disappears mid-run (deleted or transferred) would make the next one skip, so each of these lists is read twice and merged. `reconciled_by_second_pass` in the manifest counts items only the second read saw. That includes anything created or updated between the two reads, so a non-zero count on a busy repo is normal.
   - `pulls/{n}/reviews`, called once per PR active in the window, because reviews have no `since` filter.
   - `releases`, filtered on `published_at`.
   - GraphQL `discussions`, ordered `UPDATED_AT DESC` and paged back to the cursor.

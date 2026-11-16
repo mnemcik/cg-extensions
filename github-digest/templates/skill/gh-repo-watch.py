@@ -92,7 +92,9 @@ def gh_paginate(path: str, passes: int = 1) -> list:
       earlier, so the item at the next page boundary is skipped. With passes=2 the list
       is read again and the two reads are merged: an item is lost only if both reads
       skip it, which needs a second disappearance at the same boundary.
-    Items found only by a later pass are counted in RECONCILED."""
+    Items seen only by the second read are counted in RECONCILED: skipped items, but
+    also anything created or updated between the reads, so non-zero is normal on a
+    busy repo."""
     seen, items = set(), []
     for n in range(passes):
         for page in json.loads(run_gh(["api", "--paginate", "--slurp", path])):
