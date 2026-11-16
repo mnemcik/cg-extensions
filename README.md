@@ -19,6 +19,7 @@ independently.
 | [`shopping`](shopping/) | One shared shopping list for the workspace — `cg shop` adds items from any project, groups open items by supplier so one order covers every project, and tracks needed → ordered → received. One file per item, so parallel sessions never conflict. |
 | [`live-runs`](live-runs/) | Watch headless `claude -p` runs live — `cg live run` logs every agent step and the live output of every shell command, `cg live watch` shows it (as a tmux split next to the session when run inside tmux); same result JSON as `--output-format json`. |
 | [`tmux`](tmux/) | Starts the workspace's AI session in its own session on cg's own tmux server (`tmux -L cg`) when you run `cg`, so it survives closing the terminal and tools can open panes next to it; your own tmux is left alone. Uses the `launcher` contribution point (cg 1.32+). |
+| [`github-digest`](github-digest/) | Digests a watched GitHub repo's activity since the last digest straight from the GitHub API, so you need no notification email: a skill (no CLAUDE.md section) and a read-only `gh` fetcher, with one target file and since-cursor per repo. Ships its skill via `templates` into `.claude/skills/`. |
 
 ## Install
 

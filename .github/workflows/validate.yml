@@ -146,3 +146,19 @@ jobs:
           if [ "$RUNNER_OS" = macOS ]; then brew install tmux; else sudo apt-get update -qq && sudo apt-get install -y -qq tmux; fi
       - name: Run the cg-tmux test suite
         run: tmux/tests/run.sh
+
+  github-digest-tests:
+    # Offline unit tests for the fetcher; Windows covers the UTF-8 I/O path. Runners
+    # no longer ship Python 3.9 (EOL), so the 3.9 floor is checked locally instead.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - name: Run the gh-repo-watch test suite
+        run: python -m unittest discover -s github-digest/tests -v

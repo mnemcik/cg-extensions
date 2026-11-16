@@ -1,0 +1,22 @@
+# Changelog — github-digest
+
+All notable changes to this extension are documented here. Format follows
+[Keep a Changelog](https://keepachangelog.com/); the extension version lives in
+`cg-extension.json` (`version`).
+
+## [0.1.0] — 2026-11-16
+
+### Added
+- The `github-digest` skill (`.claude/skills/github-digest/SKILL.md`). It covers the trigger, the digest process, the selection rules, the gaps, and adding a target.
+- `gh-repo-watch.py`, a read-only fetcher that collects everything since a cursor:
+  - issues and PRs
+  - issue and review comments
+  - reviews, fetched per active PR
+  - releases
+  - GraphQL discussions
+
+  It writes `summary.md`, per-thread `chunk-NN.md` files, `raw/*.json` and `manifest.json`. Threads with no human comment, review, open or close in the window are rolled up rather than narrated, bot comments collapse to one count line, and a thread longer than a chunk is split.
+- **Keyset pagination** for the three since-windowed lists. Requests run oldest first, and each request's `since` is the newest `updated_at` already seen, so a deletion mid-run can't skip an item. A second with 100 or more items falls back to page numbers, verified by re-reading until two reads agree. Those seconds are listed in `stalled_seconds`. If the reads never agree, the cursor is held before the second (`unverified_seconds`).
+- Offline unit tests (`tests/`), run in CI on macOS, Ubuntu and Windows.
+- `templates/github-digest-target.md`, the per-repo target format, holding the Cursor and the Digest History.
+- Repository content is treated as data, never instructions. The skill says so for the agent and for every batch and merge subagent, and each chunk file opens with the same notice.
