@@ -17,7 +17,8 @@ The extension contributes a `launcher` (cg 1.32+). `cg start` then runs `bin/cg-
 **Worth knowing:**
 - **Environment.** A new session gets the `PATH` of the `cg` that started it (tmux handles `PATH` that way). The variables in tmux's `update-environment` list (`SSH_AUTH_SOCK`, `DISPLAY` and a few more; `tmux -L cg show -g update-environment` lists them) also come from that `cg`. Every other variable comes from cg's tmux server as it was when the first `cg` started it: a variable you set or change later reaches new sessions only after the server stops (it stops when its last session ends, or `tmux -L cg kill-server`).
 - **Exit code.** `cg` returns tmux's exit code, not the agent's.
-- **A single-word agent runs through a shell.** With the default `session.agent` (`["claude"]`), tmux runs it with its `default-shell -c`; an agent with two or more arguments is executed directly.
+- **A one-word command runs through a shell.** It is the whole command that counts: bare `cg` with the default `session.agent` (`["claude"]`) gives tmux the single word `claude`, which it runs with its `default-shell -c`; `cg start --resume <id>` (or an agent with arguments) gives it several words, which it executes directly.
+- **Closing the terminal leaves the agent running** inside cg's tmux server. Quit the agent to end the session, or stop it from outside with `tmux -L cg kill-session -t <name>`.
 
 | Contribution | What |
 |---|---|
@@ -32,7 +33,9 @@ brew install tmux                  # or your package manager
 cg extension install cg/tmux
 cg                                 # starts claude inside tmux
 tmux -L cg ls                      # cg's sessions
-tmux -L cg attach                  # back to a session after closing its terminal
+tmux -L cg attach                  # back to the most recent one after closing its terminal
+tmux -L cg attach -t <name>        # or to a specific one
+tmux -L cg kill-session -t <name>  # stop one from outside
 ```
 
 Inside tmux, `Ctrl+B` is tmux's prefix key: Claude Code's own `Ctrl+B` (move a command to the background) needs it twice. A terminal's own features that work per tab (Warp's blocks, for example) don't apply inside tmux.
@@ -40,7 +43,7 @@ Inside tmux, `Ctrl+B` is tmux's prefix key: Claude Code's own `Ctrl+B` (move a c
 ## Requirements
 
 - cg 1.32+ (the `launcher` contribution point). An older cg installs the extension but ignores the launcher; after upgrading cg, run `cg extension update tmux` to get it.
-- tmux 3.x; without it, `cg` starts the agent directly and says so.
+- tmux 3.2 or later: the bundled `tmux.conf` uses `extended-keys` and `terminal-features`, which 3.0 and 3.1 reject when a session starts. Without tmux, `cg` starts the agent directly and says so.
 - macOS or Linux.
 
 ## Tests
