@@ -12,14 +12,20 @@
 #       Inside tmux it opens `cg live watch` as a split of the calling pane, once
 #       per window; elsewhere it prints how to watch. CG_LIVE_NO_WATCH=1: neither.
 #
-#   cg live watch [--events | --cmds] [--once] [events.jsonl | cmd.log]
+#   cg live watch [--events | --cmds] [--once] [--until-pane ID] [events.jsonl | cmd.log]
 #       Follows the latest run (and newer ones) or the given file: agent text,
 #       each tool call and the start of its result, live command output, and
 #       the final turns / time / cost. --once prints what is there and exits.
+#       --until-pane ID: exit when that tmux pane closes (the split viewer uses
+#       it, so quitting the agent also ends the viewer and the session).
 #       WATCH_LINES (default 12): lines per tool result; WATCH_THINKING=1: thinking.
+#   Logs hold full transcripts and command output: the directory is created
+#   mode 700 and every file 600; nothing removes old runs.
 set -uo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"
+umask 077
+tmux_bin="${CG_LIVE_TMUX:-tmux}"
 dir="${CG_LIVE_DIR:-$HOME/.cache/cg-live}"
 
 die() { echo "cg live: $*" >&2; exit 2; }
@@ -42,9 +48,9 @@ live_run() {
   local label
   label=$(printf '%s' "$1" | tr -c 'A-Za-z0-9._-' '-')
   shift
-  mkdir -p "$dir" || die "cannot create $dir"
+  mkdir -p -m 700 "$dir" || die "cannot create $dir"
   local base events cmdlog
-  base="$dir/$(date +%Y%m%d-%H%M%S)-$label"
+  base="$dir/$(date +%Y%m%d-%H%M%S)-$$-$label"
   events="$base.events.jsonl"
   cmdlog="$base.cmd.log"
   : > "$events" && : > "$cmdlog" || die "cannot write logs in $dir"
@@ -66,12 +72,13 @@ live_run() {
 
 open_viewer() {
   [ "${CG_LIVE_NO_WATCH:-}" = 1 ] && return 0
-  if [ -n "${TMUX:-}" ] && [ -n "${TMUX_PANE:-}" ] && command -v tmux >/dev/null 2>&1; then
-    if ! tmux list-panes -t "$TMUX_PANE" -F '#{@cg_live_watch}' 2>/dev/null | grep -q 1; then
+  if [ -n "${TMUX:-}" ] && [ -n "${TMUX_PANE:-}" ] && command -v "$tmux_bin" >/dev/null 2>&1; then
+    if ! "$tmux_bin" list-panes -t "$TMUX_PANE" -F '#{@cg_live_watch}' 2>/dev/null | grep -q 1; then
       local pane
-      if pane=$(tmux split-window -h -d -l 45% -t "$TMUX_PANE" -P -F '#{pane_id}' \
-                  "CG_LIVE_DIR='$dir' '$here/cg-live' watch"); then
-        tmux set-option -p -t "$pane" @cg_live_watch 1
+      # Arguments, not a shell string: paths with spaces or quotes stay intact.
+      if pane=$("$tmux_bin" split-window -h -d -l 45% -t "$TMUX_PANE" -P -F '#{pane_id}' \
+                  -e "CG_LIVE_DIR=$dir" -- "$here/cg-live" watch --until-pane "$TMUX_PANE"); then
+        "$tmux_bin" set-option -p -t "$pane" @cg_live_watch 1
       else
         echo "cg live: could not split the tmux pane; watch with: cg live watch" >&2
       fi
@@ -132,39 +139,51 @@ JQ
 
 live_watch() {
   need jq
-  local mode=both once=0
+  local mode=both once=0 until_pane=""
   while [ $# -gt 0 ]; do
     case "$1" in
       --events) mode=events; shift ;;
       --cmds) mode=cmds; shift ;;
       --once) once=1; shift ;;
+      --until-pane) until_pane=${2:-}; [ -n "$until_pane" ] || usage; shift 2 ;;
       -*) usage ;;
       *) break ;;
     esac
   done
-  local events cmdlog
+  local events="" cmdlog=""
   if [ "$mode" = cmds ]; then
     cmdlog="${1:-$dir/latest.cmd.log}"
   else
     events="${1:-$dir/latest.events.jsonl}"
     cmdlog="${events%.events.jsonl}.cmd.log"
   fi
-  src() { if [ "$once" = 1 ]; then cat "$1" 2>/dev/null; else tail -n +1 -F "$1" 2>/dev/null; fi; }
   fmt() { jq -rn --unbuffered "$FMT"; }
-  case "$mode" in
-    events) src "$events" | fmt ;;
-    cmds)   src "$cmdlog" ;;
-    both)
-      if [ "$once" = 1 ]; then
-        src "$events" | fmt
-        src "$cmdlog" | sed 's/^/   │ /'
-      else
-        trap 'kill 0' INT TERM EXIT
-        src "$events" | fmt &
-        src "$cmdlog" | sed -u 's/^/   │ /' &
-        wait
-      fi ;;
-  esac
+  bar() { sed -u 's/^/   │ /'; }
+
+  if [ "$once" = 1 ]; then
+    [ "$mode" != cmds ] && cat "$events" 2>/dev/null | fmt
+    [ "$mode" = both ] && cat "$cmdlog" 2>/dev/null | sed 's/^/   │ /'
+    [ "$mode" = cmds ] && cat "$cmdlog" 2>/dev/null
+    return 0
+  fi
+
+  # Follow: one tail per file with a known PID, so stopping kills only our own
+  # processes (never the caller's process group); each filter ends when its tail does.
+  local pids=""
+  if [ "$mode" != cmds ]; then tail -n +1 -F "$events" 2>/dev/null > >(fmt) & pids="$pids $!"; fi
+  if [ "$mode" = both ]; then tail -n +1 -F "$cmdlog" 2>/dev/null > >(bar) & pids="$pids $!"; fi
+  if [ "$mode" = cmds ]; then tail -n +1 -F "$cmdlog" 2>/dev/null & pids="$pids $!"; fi
+  # shellcheck disable=SC2064,SC2086
+  trap "kill $pids 2>/dev/null" INT TERM EXIT
+  if [ -n "$until_pane" ]; then
+    # display-message on a closed pane prints nothing and still exits 0, so ask
+    # whether the pane id is still listed.
+    while "$tmux_bin" list-panes -a -F '#{pane_id}' 2>/dev/null | grep -qxF -- "$until_pane"; do sleep 2; done
+    # shellcheck disable=SC2086
+    kill $pids 2>/dev/null
+  fi
+  # shellcheck disable=SC2086
+  wait $pids 2>/dev/null
 }
 
 case "${1:-}" in

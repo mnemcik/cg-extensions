@@ -5,20 +5,38 @@
 # calls, hooks, the status line and stdio MCP startup. For Bash tool calls it
 # copies the command and its output, as it happens, to $CG_LIVE_CMD_LOG; Claude
 # still gets the same output and exit code. Everything else runs untouched.
+#
+# A Bash tool call looks like (Claude Code 2.1):
+#   <setup> && eval <ARG> < /dev/null && pwd -P >| <cwd-file>
+# where ARG is the command shell-quoted: a bare word (`eval pwd`), or one
+# single-quoted string in which a ' is written '"'"' (`eval 'echo '"'"'x'"'"''`).
 inv="$1"
 shell="${CLAUDE_CODE_SHELL:-${SHELL:-/bin/bash}}"
+umask 077
 
-# A Bash tool call looks like: source <snapshot> … && eval '<command>' < /dev/null && pwd -P >| <file>
+# Only Bash tool calls (both markers) are logged; anything else runs as is.
 case "$inv" in
-  *"eval '"*) ;;
+  *" eval "*" < /dev/null && pwd -P >| "*|*" eval "*" \< /dev/null && pwd -P >| "*) ;;
   *) exec "$shell" -c "$inv" ;;
 esac
 [ -n "${CG_LIVE_CMD_LOG:-}" ] || exec "$shell" -c "$inv"
 
-cmd="${inv#*eval \'}"
-cmd="${cmd%\' < /dev/null*}"
+# The command: between the first " eval " and the last "< /dev/null && pwd -P >|".
+arg="${inv#* eval }"
+arg="${arg% && pwd -P >| *}"
+arg="${arg% < /dev/null}"
+arg="${arg% \\< /dev/null}"
+# Decode the quoting for display only (nothing here is executed).
 q="'"
-cmd="${cmd//"'\\''"/$q}"   # un-escape '\'' back to ' (same in bash 3.2 and 5)
+case "$arg" in
+  "'"*"'")
+    cmd="${arg#\'}"
+    cmd="${cmd%\'}"
+    cmd="${cmd//"'\"'\"'"/$q}"   # '"'"' -> '
+    cmd="${cmd//"'\\''"/$q}"     # '\'' -> ' (older quoting)
+    ;;
+  *) cmd="$arg" ;;
+esac
 printf '\n\033[1;36m━━ %s  $ %s\033[0m\n' "$(date +%H:%M:%S)" "$cmd" >> "$CG_LIVE_CMD_LOG"
 
 # Claude Code merges stdout and stderr anyway, so merging here changes nothing it sees.

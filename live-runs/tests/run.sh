@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # Test suite for bin/cg-live and bin/cg-live-tee. Uses a fake claude that
-# prints stream-json events and runs one Bash tool call and one hook through
-# CLAUDE_CODE_SHELL_PREFIX the way Claude Code does. Never calls the real claude.
+# prints stream-json events and runs Bash tool calls and a hook through
+# CLAUDE_CODE_SHELL_PREFIX in the exact shapes Claude Code 2.1.325 sends
+# (captured from the real CLI): `<setup> && eval <ARG> < /dev/null && pwd -P >| <file>`,
+# ARG a bare word or one single-quoted string with ' written as '"'"'.
+# Never calls the real claude or a real tmux.
 #
 #   tests/run.sh
 set -u
@@ -33,9 +36,13 @@ cat > "$T/claude" <<'C'
 printf '%s\n' "PASSED: ${*:5}" > "$FAKE_ARGS"
 echo '{"type":"system","subtype":"init","model":"m-1","cwd":"/w","session_id":"s-1"}'
 echo '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"echo '"'"'it works'"'"'; echo err >&2; exit 4"}}]}}'
-out=$("$CLAUDE_CODE_SHELL_PREFIX" "true && eval 'echo '\''it works'\''; echo err >&2; exit 4' < /dev/null && pwd -P >| /dev/null" 2>&1); rc=$?
+out=$("$CLAUDE_CODE_SHELL_PREFIX" "true && eval 'echo '\"'\"'it works'\"'\"'; echo err >&2; exit 4' < /dev/null && pwd -P >| /dev/null" 2>&1); rc=$?
 printf '%s\n' "rc=$rc out=$out" > "$FAKE_TOOL"
-"$CLAUDE_CODE_SHELL_PREFIX" "echo hook-ran" >> "$FAKE_TOOL"
+# A one-word command is sent unquoted; a pipeline stays inside the quotes.
+"$CLAUDE_CODE_SHELL_PREFIX" "true && eval pwd < /dev/null && pwd -P >| /dev/null" >/dev/null
+"$CLAUDE_CODE_SHELL_PREFIX" "true && eval 'printf \"a\\nb\\n\" | wc -l' < /dev/null && pwd -P >| /dev/null" >/dev/null
+# A hook containing "eval '" is not a Bash call: untouched, stderr kept separate.
+"$CLAUDE_CODE_SHELL_PREFIX" "echo hook-ran; echo \"eval 'x'\" >/dev/null; echo hook-err >&2" >> "$FAKE_TOOL" 2>"$FAKE_TOOL.hookerr"
 echo '{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1","is_error":true,"content":"Exit code 4\nit works\nerr"}]}}'
 echo '{"type":"assistant","message":{"content":[{"type":"text","text":"All done."}]}}'
 echo 'not json'
@@ -69,12 +76,17 @@ contains "tee result" "$tool" "rc=4"
 contains "tee stdout" "$tool" "it works"
 contains "tee stderr" "$tool" "err"
 contains "hook untouched" "$tool" "hook-ran"
+lacks "hook stderr not merged" "$tool" "hook-err"
+contains "hook stderr kept" "$(cat "$T/tool.hookerr")" "hook-err"
 log=$(strip < "$cl")
 contains "cmd header" "$log" "\$ echo 'it works'; echo err >&2; exit 4"
 contains "cmd output" "$log" "it works"
 contains "cmd stderr" "$log" "err"
 contains "cmd exit" "$log" "exit 4"
 lacks "hook not logged" "$log" "hook-ran"
+contains "bare word logged" "$log" "\$ pwd"
+contains "pipeline logged" "$log" "\$ printf \"a\\nb\\n\" | wc -l"
+lacks "no quoting residue" "$log" "/dev/null"
 
 # --- tee without a log: pass-through only ---
 o=$(env -u CG_LIVE_CMD_LOG "$TEE" "eval 'echo plain; exit 5' < /dev/null" 2>&1); rc=$?
@@ -95,6 +107,42 @@ expect "watch events only" 0 "$LIVE" watch --events --once "$(readlink "$ev")"
 lacks "events only" "$(printf '%s' "$out" | strip)" "│ it works"
 expect "watch cmds only" 0 "$LIVE" watch --cmds --once
 contains "cmds only" "$(printf '%s' "$out" | strip)" "exit 4"
+
+# --- private logs; no collision between runs in the same second ---
+mode() { stat -f %Lp "$1" 2>/dev/null || stat -c %a "$1"; }
+[ "$(mode "$T/runs")" = 700 ] && ok || bad "log dir mode $(mode "$T/runs"), want 700"
+[ "$(mode "$(readlink "$ev")")" = 600 ] && ok || bad "events file mode $(mode "$(readlink "$ev")"), want 600"
+[ "$(mode "$(readlink "$cl")")" = 600 ] && ok || bad "cmd log mode $(mode "$(readlink "$cl")"), want 600"
+"$LIVE" run same -- x >/dev/null 2>&1; "$LIVE" run same -- x >/dev/null 2>&1
+[ "$(ls "$T/runs" | grep -c -- '-same.events.jsonl$')" = 2 ] && ok || bad "two same-label runs share a log: $(ls "$T/runs")"
+
+# --- stopping a background viewer kills only the viewer, not its caller ---
+o=$(bash -c '"$0" watch "$1" >/dev/null 2>&1 & p=$!; sleep 1; kill -TERM $p; wait $p; echo caller-survived' "$LIVE" "$(readlink "$ev")" 2>&1)
+contains "kill scope" "$o" "caller-survived"
+
+# --- fake tmux: records split-window args; a pane "exists" while its flag file does ---
+cat > "$T/tmux" <<A
+#!/bin/sh
+case "\$1" in
+  list-panes) [ "\$2" = -a ] && [ -e "$T/pane-alive" ] && echo %5; exit 0 ;;
+  split-window) for a in "\$@"; do printf '%s\n' "\$a"; done > "$T/split.args"; echo %9 ;;
+  set-option) exit 0 ;;
+  display-message) exit 0 ;;  # like real tmux: exits 0 even for a closed pane
+esac
+A
+chmod +x "$T/tmux"
+odd="$T/runs dir'q"
+expect "split" 3 env -u CG_LIVE_NO_WATCH TMUX=/tmp/s,1,0 TMUX_PANE=%5 CG_LIVE_TMUX="$T/tmux" CG_LIVE_DIR="$odd" "$LIVE" run split -- x
+args=$(cat "$T/split.args" 2>/dev/null)
+contains "split env arg" "$args" "CG_LIVE_DIR=$odd"
+contains "split argv" "$args" "$(printf -- '--\n%s\nwatch\n--until-pane\n%%5' "$(cd "$here/../bin" && pwd)/cg-live")"
+
+# --- --until-pane: the viewer exits when the agent's pane closes ---
+touch "$T/pane-alive"
+CG_LIVE_TMUX="$T/tmux" "$LIVE" watch --until-pane %5 "$(readlink "$ev")" >/dev/null 2>&1 & wp=$!
+sleep 1; kill -0 $wp 2>/dev/null && ok || bad "until-pane: viewer exited while the pane is alive"
+rm -f "$T/pane-alive"; sleep 4
+if kill -0 $wp 2>/dev/null; then bad "until-pane: viewer still running after the pane closed"; kill $wp; else ok; fi
 
 # --- viewer hint outside tmux ---
 expect "hint" 3 env -u CG_LIVE_NO_WATCH -u TMUX "$LIVE" run hint -- x
