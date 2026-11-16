@@ -117,7 +117,8 @@ def gh_since_keyset(path: str, since: dt.datetime) -> list:
     number, where a deletion mid-read can skip an item. The second is therefore read
     repeatedly until two consecutive reads return the same id sequence: a deletion
     during a read changes its sequence, so two identical reads mean the list was stable
-    for both. If FALLBACK_READS reads never agree, the second is recorded in
+    for both, provided GitHub orders tied items stably (undocumented; see SKILL.md,
+    "Not covered"). If FALLBACK_READS reads never agree, the second is recorded in
     STATS["unverified_seconds"] and the caller holds the cursor before it, so the next
     run reads it again rather than advancing past a possible gap.
     """

@@ -69,6 +69,7 @@ If the user names a repo that has no target, offer to create one (see *Adding a 
 
 ## Not covered
 
+- **Exhaustive coverage of a stalled second.** A stalled second has 100 or more items updated within it, as after a bulk label or a migration. It is read by page number and accepted when two reads agree. That proves coverage only if GitHub returns tied items in a stable order, which its docs don't state. If the order were unstable and an item changed mid-read, both reads could skip the same item. Holding the cursor at every stalled second instead would stop the digest moving past any bulk operation. When `offset_fallbacks` > 0, say in Data Caveats that those seconds rely on this assumption.
 - **Commits pushed straight to the default branch without a PR.** If a repo works that way, add `gh api 'repos/O/R/commits?since=<cursor>'` by hand and say so in Data Caveats.
 - **Reactions, project-board moves, and timeline events** such as labelled, assigned or cross-referenced.
 - **Discussion comments beyond the last 50 per discussion, or the last 20 replies per comment.**
