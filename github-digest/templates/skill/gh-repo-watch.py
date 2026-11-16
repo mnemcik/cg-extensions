@@ -102,6 +102,7 @@ def gh_page(path: str) -> list:
 
 STATS = {"keyset_requests": 0, "offset_fallbacks": 0, "stalled_seconds": [], "unverified_seconds": []}
 FALLBACK_READS = 5  # max offset reads of one stalled second before giving up
+LAG_TOLERANCE = 10  # out-of-place items tolerated per page (capped at half the page)
 
 
 def gh_since_keyset(path: str, since: dt.datetime) -> list:
@@ -115,7 +116,14 @@ def gh_since_keyset(path: str, since: dt.datetime) -> list:
     timestamp, not an offset. An item updated mid-run moves to the end, so it is read
     later, not lost.
 
-    One residual case: PAGE or more items updated within the same second stall the
+    GitHub sorts and filters by an index that can lag the `updated_at` it returns
+    (seen live on gastownhall/gascity: an item placed among 2026-11-05 items came back
+    as updated 2026-11-15). Advancing to the page's newest `updated_at` would then jump
+    past everything in between. So the cursor advances to the k-th newest `updated_at`
+    on the page, k = min(LAG_TOLERANCE, half the page): up to k-1 such items per page
+    can't move it. Re-read items are deduplicated by id.
+
+    One residual case: about PAGE - k or more items updated within the same second stall the
     keyset (the newest timestamp can't advance), so that second has to be read by page
     number, where a deletion mid-read can skip an item. The second is therefore read
     repeatedly until two consecutive reads return the same id sequence: a deletion
@@ -145,11 +153,12 @@ def gh_since_keyset(path: str, since: dt.datetime) -> list:
         take(page)
         if len(page) < PAGE:
             return items
-        newest = max(ts(i["updated_at"]) for i in page)
+        stamps = sorted(ts(i["updated_at"]) for i in page)
+        newest = stamps[-max(1, min(LAG_TOLERANCE, len(stamps) // 2))]
         if newest > cur:
             cur = newest
             continue
-        # Stalled: a full page within one second. Read that second by page number until
+        # Stalled: fewer than k items past the cursor's second, so it can't advance. Read that second by page number until
         # two consecutive reads agree.
         STATS["offset_fallbacks"] += 1
         STATS["stalled_seconds"].append(iso(cur))

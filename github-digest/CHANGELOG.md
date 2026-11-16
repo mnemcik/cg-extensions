@@ -4,6 +4,14 @@ All notable changes to this extension are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/); the extension version lives in
 `cg-extension.json` (`version`).
 
+## [0.1.1] — 2026-11-16
+
+### Fixed
+- **Busy repos lost most of their threads.** GitHub sorts and filters the issue list on an index that can lag the `updated_at` it returns, so a page can hold an item stamped days ahead of its place. The keyset advanced to the page's newest `updated_at` and jumped past everything in between. On `gastownhall/gascity` a 14-day window returned 266 of 777 threads, and a 7-day window 273 of 344. The next `since` is now the 10th-newest `updated_at` on the page (at most half the page), so up to nine such items per page can't move it. Counts now match GitHub search. Repos with under 100 updated threads per window were not affected, and the comment lists were complete.
+
+### Changed
+- The skill explains that `orphaned_events` can also be threads the lagging index left out of the list, and says to name them in Data Caveats and fetch them by number when they matter.
+
 ## [0.1.0] — 2026-11-16
 
 ### Added

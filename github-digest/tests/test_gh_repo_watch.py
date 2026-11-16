@@ -24,8 +24,9 @@ class FakeAPI:
     the real API), sort=updated asc,
     per_page and page. `on_request(n, api)` mutates the list between requests."""
 
-    def __init__(self, items, on_request=None):
-        self.items = {i: s for i, s in items}  # id -> updated second
+    def __init__(self, items, on_request=None, reported=None):
+        self.items = {i: s for i, s in items}  # id -> updated second (what GitHub sorts and filters by)
+        self.reported = reported or {}  # id -> the newer updated_at returned, when the index lags
         self.on_request = on_request
         self.n = 0
 
@@ -39,7 +40,7 @@ class FakeAPI:
         per, page = int(q["per_page"]), int(q.get("page", 1))
         rows = sorted((s, i) for i, s in self.items.items() if T0 + dt.timedelta(seconds=s) >= since)
         rows = rows[(page - 1) * per: page * per]
-        return json.dumps([{"id": i, "updated_at": at(s)} for s, i in rows])
+        return json.dumps([{"id": i, "updated_at": at(self.reported.get(i, s))} for s, i in rows])
 
 
 class Keyset(unittest.TestCase):
@@ -96,6 +97,24 @@ class Keyset(unittest.TestCase):
         self.assertEqual(w.STATS["offset_fallbacks"], 1)
         self.assertEqual(w.STATS["stalled_seconds"], [at(20)])
 
+    def test_lagging_sort_index_skips_nothing(self):
+        # GitHub sorts by an index that can lag the returned updated_at: item 3 sits
+        # among second-30 items but reports second 1000. Advancing to the page's newest
+        # updated_at would skip items 4-12 (live: gastownhall/gascity, 266 of 777).
+        w.PAGE = 6
+        api = FakeAPI([(i, 10 * i) for i in range(1, 13)] + [(99, 2000)], reported={3: 1000})
+        self.assertEqual(self.fetch(api), list(range(1, 13)) + [99])
+        self.assertEqual(w.STATS["offset_fallbacks"], 0)
+
+    def test_lagging_sort_index_old_behaviour_would_skip(self):
+        # Guard on the scenario itself: with no tolerance it really does lose items.
+        w.PAGE, tol = 6, w.LAG_TOLERANCE
+        w.LAG_TOLERANCE = 1
+        try:
+            api = FakeAPI([(i, 10 * i) for i in range(1, 13)] + [(99, 2000)], reported={3: 1000})
+            self.assertLess(len(self.fetch(api)), 13)
+        finally:
+            w.LAG_TOLERANCE = tol
 
     def test_deletion_during_fallback_is_recovered(self):
         # Five items in one second (page size 2) force the fallback. An item vanishes
