@@ -11,7 +11,7 @@ An AI session started straight in a terminal tab lives and dies with that tab. C
 The extension contributes a `launcher` (cg 1.32+). `cg start` then runs `bin/cg-tmux launch -- <agent…>` instead of the agent (`session.agent` in `.cg.json`, default `claude`), and `cg-tmux`:
 
 - starts the agent in a **new tmux session** on cg's **own tmux server** (`tmux -L cg`), named `<agent>-<directory>-<HHMMSS>-<pid>`, in the current directory, so every `cg` gets its own session and parallel sessions stay separate. Quitting the agent ends the tmux session. Your own tmux server, its sessions and `~/.tmux.conf` are left alone.
-- uses the bundled **`tmux.conf`** when it starts that server: mouse on, 100k lines of history, `escape-time 10` (Esc reaches the agent at once instead of after tmux's default 500 ms), extended keys, true colour. It applies to cg's server only, and is read once, when the server starts; `~/.tmux.conf` is not read for it.
+- uses the bundled **`tmux.conf`** when it starts that server: mouse on, 100k lines of history, `escape-time 10` (Esc reaches the agent at once instead of after tmux's default 500 ms), extended keys, true colour, the terminal's tab title taken from the agent's title (so `/rename` shows), and passthrough so the agent's desktop notifications reach the terminal (tmux 3.3+). It applies to cg's server only, and is read once, when the server starts; `~/.tmux.conf` is not read for it.
 - runs the agent **directly** when it is already inside tmux, when stdin or stdout isn't a terminal (tmux can't attach then), or, with a warning, when tmux is not installed. `cg` always starts the session.
 
 **Worth knowing:**

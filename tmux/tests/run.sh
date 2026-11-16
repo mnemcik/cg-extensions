@@ -83,6 +83,11 @@ if command -v tmux >/dev/null 2>&1; then
   if tmux -L "$sock" -f "$CONF" new-session -d -s t 'sleep 5' 2>"$T/conf.err"; then
     ok
     [ "$(tmux -L "$sock" show -gv escape-time 2>/dev/null)" = 10 ] && ok || bad "tmux.conf: escape-time not applied"
+    [ "$(tmux -L "$sock" show -gv set-titles 2>/dev/null)" = on ] && ok || bad "tmux.conf: set-titles not applied"
+    [ "$(tmux -L "$sock" show -gv set-titles-string 2>/dev/null)" = '#T' ] && ok || bad "tmux.conf: set-titles-string not applied"
+    if tmux -L "$sock" show -gwv allow-passthrough >/dev/null 2>&1; then
+      [ "$(tmux -L "$sock" show -gwv allow-passthrough 2>/dev/null)" = on ] && ok || bad "tmux.conf: allow-passthrough not applied"
+    fi
   else
     bad "tmux.conf does not load: $(cat "$T/conf.err")"
   fi
