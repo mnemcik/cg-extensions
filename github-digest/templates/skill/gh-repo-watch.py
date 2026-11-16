@@ -82,10 +82,6 @@ def gh_paginate(path: str) -> list:
     return [item for page in json.loads(run_gh(["api", "--paginate", "--slurp", path])) for item in page]
 
 
-def gh_get(path: str):
-    return json.loads(run_gh(["api", path]))
-
-
 def fetch_releases(base: str, since: dt.datetime) -> list:
     """All releases, filtered on published_at. Paged fully: the list is ordered by
     created_at (the release commit's date), so no page boundary bounds published_at."""
