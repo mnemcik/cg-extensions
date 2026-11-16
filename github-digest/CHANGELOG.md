@@ -17,3 +17,4 @@ All notable changes to this extension are documented here. Format follows
 
   It writes `summary.md`, per-thread `chunk-NN.md` files, `raw/*.json` and `manifest.json`. Bot-only threads are rolled up rather than narrated.
 - `templates/github-digest-target.md`, the per-repo target format, holding the Cursor and the Digest History.
+- Repository content is treated as data, never instructions. The skill says so for the agent and for every batch and merge subagent, and each chunk file opens with the same notice.
