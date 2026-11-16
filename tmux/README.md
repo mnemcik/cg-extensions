@@ -15,7 +15,7 @@ The extension contributes a `launcher` (cg 1.32+). `cg start` then runs `bin/cg-
 - runs the agent **directly** when it is already inside tmux, when stdin or stdout isn't a terminal (tmux can't attach then), or, with a warning, when tmux is not installed. `cg` always starts the session.
 
 **Worth knowing:**
-- **Environment.** A new session gets the `PATH` of the `cg` that started it (tmux handles `PATH` that way). Every other variable comes from cg's tmux server as it was when the first `cg` started it: a variable you set or change later reaches new sessions only after the server stops (it stops when its last session ends, or `tmux -L cg kill-server`).
+- **Environment.** A new session gets the `PATH` of the `cg` that started it (tmux handles `PATH` that way). The variables in tmux's `update-environment` list (by default `DISPLAY`, `KRB5CCNAME`, `SSH_ASKPASS`, `SSH_AUTH_SOCK`, `SSH_AGENT_PID`, `SSH_CONNECTION`, `WINDOWID`, `XAUTHORITY`) also come from that `cg`. Every other variable comes from cg's tmux server as it was when the first `cg` started it: a variable you set or change later reaches new sessions only after the server stops (it stops when its last session ends, or `tmux -L cg kill-server`).
 - **Exit code.** `cg` returns tmux's exit code, not the agent's.
 - **A single-word agent runs through a shell.** With the default `session.agent` (`["claude"]`), tmux runs it with its `default-shell -c`; an agent with two or more arguments is executed directly.
 
