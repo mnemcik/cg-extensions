@@ -77,20 +77,32 @@ def run_gh(args: list) -> str:
     return p.stdout
 
 
-def gh_paginate(path: str) -> list:
+RECONCILED = {"added_by_second_pass": 0}
+
+
+def gh_paginate(path: str, passes: int = 1) -> list:
     """REST GET with --paginate --slurp (gh >= 2.48): pages flattened, deduplicated by id.
 
-    Pages are offsets into a live list, so an item that changes mid-run moves. With
-    updated-desc order it moves to the front, onto a page already read, which pushes
-    the rest one place later: they repeat (deduplicated here) rather than get skipped.
-    The moved item itself was updated after cursor_out, so the next run picks it up."""
+    Pages are offsets into a live list, so the list can move under us:
+    - An item that *changes* mid-run moves to the front (updated-desc order), onto a
+      page already read, pushing the rest one place later: they repeat (deduplicated
+      here) rather than get skipped. The moved item was updated after cursor_out, so
+      the next run picks it up.
+    - An item that *disappears* mid-run (deleted, transferred) pulls the rest one place
+      earlier, so the item at the next page boundary is skipped. With passes=2 the list
+      is read again and the two reads are merged: an item is lost only if both reads
+      skip it, which needs a second disappearance at the same boundary.
+    Items found only by a later pass are counted in RECONCILED."""
     seen, items = set(), []
-    for page in json.loads(run_gh(["api", "--paginate", "--slurp", path])):
-        for item in page:
-            key = item.get("id", id(item))
-            if key not in seen:
-                seen.add(key)
-                items.append(item)
+    for n in range(passes):
+        for page in json.loads(run_gh(["api", "--paginate", "--slurp", path])):
+            for item in page:
+                key = item.get("id", id(item))
+                if key not in seen:
+                    seen.add(key)
+                    items.append(item)
+                    if n > 0:
+                        RECONCILED["added_by_second_pass"] += 1
     return items
 
 
@@ -185,7 +197,7 @@ def main() -> int:
     base = f"repos/{owner}/{name}"
     q = f"sort=updated&direction=desc&per_page=100&since={iso(since)}"
 
-    issues = [i for i in gh_paginate(f"{base}/issues?state=all&{q}") if ts(i["updated_at"]) > since]
+    issues = [i for i in gh_paginate(f"{base}/issues?state=all&{q}", passes=2) if ts(i["updated_at"]) > since]
     write(out / "raw/issues.json", json.dumps(issues, indent=1))
     if a.count_only:
         prs = sum(1 for i in issues if "pull_request" in i)
@@ -200,8 +212,8 @@ def main() -> int:
         print(json.dumps(res, indent=1))
         return 0
 
-    icomments = [c for c in gh_paginate(f"{base}/issues/comments?{q}") if ts(c["updated_at"]) > since]
-    rcomments = [c for c in gh_paginate(f"{base}/pulls/comments?{q}") if ts(c["updated_at"]) > since]
+    icomments = [c for c in gh_paginate(f"{base}/issues/comments?{q}", passes=2) if ts(c["updated_at"]) > since]
+    rcomments = [c for c in gh_paginate(f"{base}/pulls/comments?{q}", passes=2) if ts(c["updated_at"]) > since]
     releases = fetch_releases(base, since)
     discussions = fetch_discussions(owner, name, since)
 
@@ -328,11 +340,12 @@ def main() -> int:
                 units.append(piece[:cut])
                 piece = piece[cut:]
             units.append(piece)
+        cont = f"{header} (continued)\n"
         parts, cur = [], ""
         for u in units:
-            if cur and len(cur) + len(u) > CHUNK_CHARS:
+            if cur and cur != cont and len(cur) + len(u) > CHUNK_CHARS:  # never flush a bare header
                 parts.append(cur)
-                cur = f"{header} (continued)\n"
+                cur = cont
             cur += u
         parts.append(cur)
         return [(num, p) for p in parts]
@@ -387,6 +400,7 @@ def main() -> int:
         "review_comments": len(rcomments), "reviews": sum(map(len, reviews.values())),
         "review_calls": review_calls,
         "orphaned_events": orphans,
+        "reconciled_by_second_pass": RECONCILED["added_by_second_pass"],
         "releases": [r["tag_name"] for r in releases], "merged_prs": len(merged),
         "chunks": chunk_index, "out": str(out.resolve()),
     }

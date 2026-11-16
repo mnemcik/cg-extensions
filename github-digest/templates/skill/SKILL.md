@@ -35,7 +35,7 @@ If the user names a repo that has no target, offer to create one (see *Adding a 
    - `summary.md`: counts, releases, merged PRs, and the list of rolled-up threads
    - `chunk-NN.md`: per-thread text, about 60k characters each. Each thread holds the opening post when the thread is new, then every human comment, review and review-line comment in the window, oldest first, quoted with `> `. Bot comments are collapsed to one count line.
    - `raw/*.json`: the unmodified API results
-   - `manifest.json`: `cursor_in`, `cursor_out`, the thread numbers in each chunk, `review_calls`, and `orphaned_events` (comments whose thread wasn't in the issue list; the next run's overlap catches them)
+   - `manifest.json`: `cursor_in`, `cursor_out`, the thread numbers in each chunk, `review_calls`, `reconciled_by_second_pass`, and `orphaned_events` (comments whose thread wasn't in the issue list; the next run's overlap catches them)
 
    If `gh` fails (404, auth, rate limit), the script prints gh's error and exits 1. Report it; don't retry blindly.
 6. **Read** `summary.md`, then every chunk, with the file-read tool (not `cat`). Write one `batch-NN.md` per chunk into `notes/<slug>-digest-YYYY-MM-DD/`. If that folder already exists from an earlier digest the same day, use `notes/<slug>-digest-YYYY-MM-DDb/` (then `c`, …). Never overwrite a digest the history table points to.
@@ -52,7 +52,7 @@ If the user names a repo that has no target, offer to create one (see *Adding a 
 ## How the fetcher selects
 
 - **Endpoints:**
-  - `issues` (issues and PRs), `issues/comments` and `pulls/comments`, each with `since`, `sort=updated`, `direction=desc`. Pages are offsets into a live list, so newest-first plus dedupe by id means an item changing mid-run causes repeats, not gaps. The changed item itself falls after `cursor_out`, so the next run picks it up.
+  - `issues` (issues and PRs), `issues/comments` and `pulls/comments`, each with `since`, `sort=updated`, `direction=desc`. Pages are offsets into a live list. Newest-first plus dedupe by id means an item that changes mid-run causes repeats, not gaps; the changed item itself falls after `cursor_out`, so the next run picks it up. An item that disappears mid-run (deleted or transferred) would make the next one skip, so each of these lists is read twice and merged. `reconciled_by_second_pass` in the manifest counts what the second read added.
   - `pulls/{n}/reviews`, called once per PR active in the window, because reviews have no `since` filter.
   - `releases`, filtered on `published_at`.
   - GraphQL `discussions`, ordered `UPDATED_AT DESC` and paged back to the cursor.
