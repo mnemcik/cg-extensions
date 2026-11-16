@@ -137,6 +137,17 @@ class Keyset(unittest.TestCase):
         self.assertEqual(self.fetch(api), list(range(1, 40)))
         self.assertLess(w.STATS["keyset_requests"], 50)
 
+    def test_stalled_read_ending_on_the_last_page_stops(self):
+        # 12 items an hour apart; items 2..10 report second 0, so every request from
+        # the cursor stalls and the page-number read ends on the short last page.
+        # Stepping 1 s from there crawled (54,006 requests); the read has reached the
+        # end of the list, so the fetch must stop.
+        w.PAGE = 10
+        items = [(i, 3600 * i) for i in range(1, 13)]
+        api = FakeAPI(items, reported={i: 0 for i in range(2, 11)})
+        self.assertEqual(self.fetch(api), list(range(1, 13)))
+        self.assertLess(w.STATS["keyset_requests"], 20)
+
     def test_mostly_older_stamps_and_one_far_ahead_skip_nothing(self):
         # A page of stamps older than the cursor plus one far ahead must not move the
         # cursor to the far-ahead stamp: the slow stalled-second read is accepted instead.

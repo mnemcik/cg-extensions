@@ -167,9 +167,9 @@ def gh_since_keyset(path: str, since: dt.datetime) -> list:
         # until two consecutive reads agree, then advance from the page that ended it.
         STATS["offset_fallbacks"] += 1
         STATS["stalled_seconds"].append(iso(cur))
-        prev, exit_later = None, []
+        prev, exit_later, exit_short = None, [], False
         for _ in range(FALLBACK_READS):
-            seq, n, exit_later = [], 1, []
+            seq, n, exit_later, exit_short = [], 1, [], False
             while True:
                 more = gh_page(q if n == 1 else f"{q}&page={n}")
                 STATS["keyset_requests"] += 1
@@ -179,7 +179,7 @@ def gh_since_keyset(path: str, since: dt.datetime) -> list:
                 # out-of-place item past it doesn't count, for the same reason as above.
                 past = sorted(s for s in (ts(i["updated_at"]) for i in more) if s > cur)
                 if len(more) < PAGE or len(past) >= k:
-                    exit_later = past
+                    exit_later, exit_short = past, len(more) < PAGE
                     break
                 n += 1
             if seq == prev:
@@ -187,12 +187,15 @@ def gh_since_keyset(path: str, since: dt.datetime) -> list:
             prev = seq
         else:
             STATS["unverified_seconds"].append(iso(cur))
-        # Advance like the main loop: the page that ended the read holds k stamps past
-        # the cursor, so its k-th newest is safe by the same argument. Without one (a
-        # short last page), step one second. Stepping only 1 s every time made a page of
-        # mostly older stamps crawl through a long gap one second per fallback.
-        nxt = cur + dt.timedelta(seconds=1)
-        cur = max(nxt, exit_later[-k]) if len(exit_later) >= k else nxt
+        # A read from `since=cur` that ended on a short page has reached the end of the
+        # list: everything at or after the cursor is read. (If the reads never agreed,
+        # the caller holds cursor_out before this second.) Stepping 1 s from there
+        # crawled through any gap before the last items, one fallback per second.
+        if exit_short:
+            return items
+        # Otherwise advance like the main loop: the page that ended the read holds k
+        # stamps past the cursor, so its k-th newest is safe by the same argument.
+        cur = max(cur + dt.timedelta(seconds=1), exit_later[-k])
 
 
 def fetch_releases(base: str, since: dt.datetime) -> list:
