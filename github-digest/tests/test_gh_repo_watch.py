@@ -20,7 +20,8 @@ def at(sec: int) -> str:
 
 
 class FakeAPI:
-    """A live list served like GitHub: `since` (updated after), sort=updated asc,
+    """A live list served like GitHub: `since` (updated at or after, inclusive like
+    the real API), sort=updated asc,
     per_page and page. `on_request(n, api)` mutates the list between requests."""
 
     def __init__(self, items, on_request=None):
@@ -36,7 +37,7 @@ class FakeAPI:
         q = dict(kv.split("=", 1) for kv in url.split("?", 1)[1].split("&"))
         since = w.ts(q["since"])
         per, page = int(q["per_page"]), int(q.get("page", 1))
-        rows = sorted((s, i) for i, s in self.items.items() if T0 + dt.timedelta(seconds=s) > since)
+        rows = sorted((s, i) for i, s in self.items.items() if T0 + dt.timedelta(seconds=s) >= since)
         rows = rows[(page - 1) * per: page * per]
         return json.dumps([{"id": i, "updated_at": at(s)} for s, i in rows])
 
@@ -45,7 +46,7 @@ class Keyset(unittest.TestCase):
     def setUp(self):
         self._run_gh, self._page = w.run_gh, w.PAGE
         w.PAGE = 2
-        w.STATS.update(keyset_requests=0, offset_fallbacks=0)
+        w.STATS.update(keyset_requests=0, offset_fallbacks=0, unverified_seconds=[])
 
     def tearDown(self):
         w.run_gh, w.PAGE = self._run_gh, self._page
@@ -93,6 +94,31 @@ class Keyset(unittest.TestCase):
         api = FakeAPI([(i, 20) for i in range(1, 6)] + [(9, 40)])
         self.assertEqual(self.fetch(api), [1, 2, 3, 4, 5, 9])
         self.assertEqual(w.STATS["offset_fallbacks"], 1)
+
+
+    def test_deletion_during_fallback_is_recovered(self):
+        # Five items in one second (page size 2) force the fallback. An item vanishes
+        # while page 2 of the first offset read is requested, so that read skips one;
+        # the re-reads recover it and then agree.
+        def delete_during_fallback(n, api):
+            if n == 3:
+                api.items.pop(1, None)
+        api = FakeAPI([(i, 20) for i in range(1, 6)] + [(9, 40)], delete_during_fallback)
+        got = self.fetch(api)
+        self.assertTrue(set(api.items) <= set(got), (sorted(api.items), got))
+        self.assertEqual(w.STATS["unverified_seconds"], [])
+
+    def test_unstable_fallback_is_reported(self):
+        # The list keeps changing inside the stalled second on every request: reads
+        # never agree, so the second is reported for the caller to hold the cursor.
+        counter = iter(range(100, 10_000))
+        def churn(n, api):
+            if n > 1:
+                api.items.pop(min(k for k, s in api.items.items() if s == 20), None)
+                api.items[next(counter)] = 20
+        api = FakeAPI([(i, 20) for i in range(1, 6)] + [(9, 40)], churn)
+        self.fetch(api)
+        self.assertEqual(w.STATS["unverified_seconds"], [at(20)])
 
 
 class Paginate(unittest.TestCase):

@@ -35,7 +35,7 @@ If the user names a repo that has no target, offer to create one (see *Adding a 
    - `summary.md`: counts, releases, merged PRs, and the list of rolled-up threads
    - `chunk-NN.md`: per-thread text, about 60k characters each. Each thread holds the opening post when the thread is new, then every human comment, review and review-line comment in the window, oldest first, quoted with `> `. Bot comments are collapsed to one count line.
    - `raw/*.json`: the unmodified API results
-   - `manifest.json`: `cursor_in`, `cursor_out`, the thread numbers in each chunk, `review_calls`, `keyset_requests`, `offset_fallbacks`, and `orphaned_events` (comments whose thread wasn't in the issue list; the next run's overlap catches them)
+   - `manifest.json`: `cursor_in`, `cursor_out`, the thread numbers in each chunk, `review_calls`, `keyset_requests`, `offset_fallbacks`, `unverified_seconds`, and `orphaned_events` (comments whose thread wasn't in the issue list; the next run's overlap catches them)
 
    If `gh` fails (404, auth, rate limit), the script prints gh's error and exits 1. Report it; don't retry blindly.
 6. **Read** `summary.md`, then every chunk, with the file-read tool (not `cat`). Write one `batch-NN.md` per chunk into `notes/<slug>-digest-YYYY-MM-DD/`. If that folder already exists from an earlier digest the same day, use `notes/<slug>-digest-YYYY-MM-DDb/` (then `c`, …). Never overwrite a digest the history table points to.
@@ -52,11 +52,11 @@ If the user names a repo that has no target, offer to create one (see *Adding a 
 ## How the fetcher selects
 
 - **Endpoints:**
-  - `issues` (issues and PRs), `issues/comments` and `pulls/comments`, read by **keyset**: `sort=updated`, `direction=asc`, and each request's `since` set to the newest `updated_at` already seen, minus one second, with dedupe by id. Page numbers would be offsets into a live list, where a deletion mid-run makes the next item skip; a keyset can't shift. An item updated mid-run moves to the end and is read later. The one exception is more than 100 items updated within the same second, which stalls the keyset. That second is then read by page number, counted as `offset_fallbacks` in the manifest.
+  - `issues` (issues and PRs), `issues/comments` and `pulls/comments`, read by **keyset**: `sort=updated`, `direction=asc`, and each request's `since` set to the newest `updated_at` already seen, with dedupe by id. GitHub's `since` is inclusive (at or after), so ties at that second are re-read. Page numbers would be offsets into a live list, where a deletion mid-run makes the next item skip; a keyset can't shift. An item updated mid-run moves to the end and is read later. The one exception is 100 or more items updated within the same second, which stalls the keyset. That second is then read by page number, repeatedly, until two consecutive reads agree, and counted as `offset_fallbacks`. If five reads never agree, the second is listed in `unverified_seconds` and `cursor_out` is held just before it, so the next run reads it again. Say so in Data Caveats.
   - `pulls/{n}/reviews`, called once per PR active in the window, because reviews have no `since` filter.
   - `releases`, filtered on `published_at`.
   - GraphQL `discussions`, ordered `UPDATED_AT DESC` and paged back to the cursor.
-- **What `since` means.** GitHub's `since` filters on `updated_at`, not creation, and the docs don't say whether the boundary is inclusive. Everything is therefore re-filtered `> since` client-side.
+- **What `since` means.** GitHub's `since` filters on `updated_at`, not creation, and includes the boundary (checked live; the docs don't say). The window itself is re-filtered `> cursor` client-side.
 - **`cursor_out` is the time the run started,** so windows overlap slightly and never leave a gap.
 - **What can show up twice.** An issue, review-line or discussion comment created before the window but edited inside it is marked `(edited; created before window)`. A thread updated only by a state or label change gets a placeholder line.
 - **Signal threads.** A thread is signal if one of two things happened in the window:

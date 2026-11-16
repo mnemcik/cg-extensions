@@ -18,7 +18,7 @@ Writes to DIR:
 
 Prints manifest.json to stdout. The next run's --since is manifest["cursor_out"].
 
-Endpoints (all filter on updated_at "after" --since; see SKILL.md next to this file):
+Endpoints (GitHub's `since` is inclusive: updated_at at or after; see SKILL.md next to this file):
     GET  /repos/{o}/{r}/issues?state=all&sort=updated&direction=asc&since=   (issues + PRs; keyset)
     GET  /repos/{o}/{r}/issues/comments?sort=updated&direction=asc&since=   (keyset)
     GET  /repos/{o}/{r}/pulls/comments?sort=updated&direction=asc&since=    (keyset)
@@ -97,7 +97,8 @@ def gh_page(path: str) -> list:
     return json.loads(run_gh(["api", path]))
 
 
-STATS = {"keyset_requests": 0, "offset_fallbacks": 0}
+STATS = {"keyset_requests": 0, "offset_fallbacks": 0, "unverified_seconds": []}
+FALLBACK_READS = 5  # max offset reads of one stalled second before giving up
 
 
 def gh_since_keyset(path: str, since: dt.datetime) -> list:
@@ -106,15 +107,19 @@ def gh_since_keyset(path: str, since: dt.datetime) -> list:
     Page-number paging is an offset into a live list: an item deleted or transferred
     mid-run pulls the rest one place earlier, so the item at the next boundary is
     skipped for good. Instead, each request asks for `since` = the newest `updated_at`
-    already seen (minus 1 s, so ties at that second are re-read and deduplicated),
-    oldest first. A deletion can't shift anything: the next request starts from a
+    already seen, oldest first. GitHub's `since` is inclusive (verified live), so ties
+    at that second are re-read and deduplicated. A deletion can't shift anything: the next request starts from a
     timestamp, not an offset. An item updated mid-run moves to the end, so it is read
     later, not lost.
 
-    One residual case: more than PAGE items updated within the same second would stall
-    the keyset (the newest timestamp can't advance). Then that second is read by page
-    number (offset fallback, counted in STATS), the only place a mid-run deletion could
-    still skip an item.
+    One residual case: PAGE or more items updated within the same second stall the
+    keyset (the newest timestamp can't advance), so that second has to be read by page
+    number, where a deletion mid-read can skip an item. The second is therefore read
+    repeatedly until two consecutive reads return the same id sequence: a deletion
+    during a read changes its sequence, so two identical reads mean the list was stable
+    for both. If FALLBACK_READS reads never agree, the second is recorded in
+    STATS["unverified_seconds"] and the caller holds the cursor before it, so the next
+    run reads it again rather than advancing past a possible gap.
     """
     sep = "&" if "?" in path else "?"
     seen, items = set(), []
@@ -130,7 +135,7 @@ def gh_since_keyset(path: str, since: dt.datetime) -> list:
         return added
 
     while True:
-        q = f"{path}{sep}sort=updated&direction=asc&per_page={PAGE}&since={iso(cur - dt.timedelta(seconds=1))}"
+        q = f"{path}{sep}sort=updated&direction=asc&per_page={PAGE}&since={iso(cur)}"
         page = gh_page(q)
         STATS["keyset_requests"] += 1
         take(page)
@@ -140,16 +145,25 @@ def gh_since_keyset(path: str, since: dt.datetime) -> list:
         if newest > cur:
             cur = newest
             continue
-        # Stalled: a full page within one second. Read that second by page number.
+        # Stalled: a full page within one second. Read that second by page number until
+        # two consecutive reads agree.
         STATS["offset_fallbacks"] += 1
-        n = 2
-        while True:
-            more = gh_page(f"{q}&page={n}")
-            STATS["keyset_requests"] += 1
-            take(more)
-            if len(more) < PAGE or max(ts(i["updated_at"]) for i in more) > cur:
+        prev = None
+        for _ in range(FALLBACK_READS):
+            seq, n = [], 1
+            while True:
+                more = gh_page(q if n == 1 else f"{q}&page={n}")
+                STATS["keyset_requests"] += 1
+                take(more)
+                seq += [i["id"] for i in more if ts(i["updated_at"]) <= cur]
+                if len(more) < PAGE or max(ts(i["updated_at"]) for i in more) > cur:
+                    break
+                n += 1
+            if seq == prev:
                 break
-            n += 1
+            prev = seq
+        else:
+            STATS["unverified_seconds"].append(iso(cur))
         cur = cur + dt.timedelta(seconds=1)
 
 
@@ -260,6 +274,13 @@ def main() -> int:
 
     icomments = [c for c in gh_since_keyset(f"{base}/issues/comments", since) if ts(c["updated_at"]) > since]
     rcomments = [c for c in gh_since_keyset(f"{base}/pulls/comments", since) if ts(c["updated_at"]) > since]
+    if STATS["unverified_seconds"]:
+        # Coverage of a stalled second couldn't be established: don't advance the cursor
+        # past it, so the next run reads that second again.
+        hold = min(ts(s) for s in STATS["unverified_seconds"]) - dt.timedelta(seconds=1)
+        cursor_out = min(cursor_out, hold)
+        print(f"warning: coverage unverified for {STATS['unverified_seconds']}; "
+              f"cursor_out held at {iso(cursor_out)}", file=sys.stderr)
     releases = fetch_releases(base, since)
     discussions = fetch_discussions(owner, name, since)
 
@@ -447,6 +468,7 @@ def main() -> int:
         "review_calls": review_calls,
         "orphaned_events": orphans,
         "keyset_requests": STATS["keyset_requests"], "offset_fallbacks": STATS["offset_fallbacks"],
+        "unverified_seconds": STATS["unverified_seconds"],
         "releases": [r["tag_name"] for r in releases], "merged_prs": len(merged),
         "chunks": chunk_index, "out": str(out.resolve()),
     }
