@@ -117,16 +117,24 @@ class Keyset(unittest.TestCase):
         self.assertEqual(w.STATS["unverified_seconds"], [])
 
     def test_stamps_older_than_the_cursor_do_not_stall_it(self):
-        # Returned updated_at older than the item's place in the order (10 of 29 items
-        # report second 0, up to 6 per page). Counting those stamps made the cursor
-        # crawl one second per fallback (91 fallbacks, 299 requests); it must step to
-        # the oldest stamp past the cursor instead.
+        # Returned updated_at older than the item's place in the order (up to 4 per
+        # page, under half): only stamps past the cursor count, so the keyset still
+        # advances by pages. Counting them stalled it into the fallback.
         w.PAGE = 10
         items = [(i, 10 * i) for i in range(1, 30)]
-        api = FakeAPI(items, reported={i: 0 for i in range(5, 15)})
+        api = FakeAPI(items, reported={i: 0 for i in (5, 6, 7, 8, 15, 16, 17, 18)})
         self.assertEqual(self.fetch(api), list(range(1, 30)))
-        self.assertLess(w.STATS["offset_fallbacks"], 20)
-        self.assertLess(w.STATS["keyset_requests"], 100)
+        self.assertEqual(w.STATS["offset_fallbacks"], 0)
+
+    def test_mostly_older_stamps_and_one_far_ahead_skip_nothing(self):
+        # A page of stamps older than the cursor plus one far ahead must not move the
+        # cursor to the far-ahead stamp: the slow stalled-second read is accepted instead.
+        w.PAGE = 10
+        items = [(i, 10 * i) for i in range(1, 40)]
+        reported = {i: 1 for i in range(11, 20)}
+        reported[20] = 5000
+        api = FakeAPI(items, reported=reported)
+        self.assertEqual(self.fetch(api), list(range(1, 40)))
 
     def test_lagging_sort_index_old_behaviour_would_skip(self):
         # Guard on the scenario itself: with no tolerance it really does lose items.

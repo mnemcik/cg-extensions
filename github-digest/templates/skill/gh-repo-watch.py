@@ -156,19 +156,14 @@ def gh_since_keyset(path: str, since: dt.datetime) -> list:
             return items
         # Only stamps past the cursor count: a returned updated_at can also be older
         # than the item's place in the order, and those must not hold the cursor back.
-        stamps = [ts(i["updated_at"]) for i in page]
-        later = sorted(s for s in stamps if s > cur)
+        later = sorted(s for s in (ts(i["updated_at"]) for i in page) if s > cur)
         if len(later) >= k:
             cur = later[-k]
             continue
-        ties = sum(s == cur for s in stamps)
-        if later and ties * 2 < len(page) - len(later):
-            # Most of the rest report a time before the cursor, not a tie: step to the
-            # oldest stamp past it, which can't skip anything.
-            cur = later[0]
-            continue
-        # Stalled: fewer than k items past the cursor's second (a bulk change put most
-        # of the page in one second), so the cursor can't advance. Read that second by
+        # Stalled: fewer than k items past the cursor's second, so the cursor can't
+        # advance safely: usually a bulk change put most of the page in one second; it
+        # also happens if most stamps are older than the cursor, which costs extra
+        # requests but loses nothing (stepping to a lone stamp past the cursor could). Read that second by
         # page number until two consecutive reads agree.
         STATS["offset_fallbacks"] += 1
         STATS["stalled_seconds"].append(iso(cur))
