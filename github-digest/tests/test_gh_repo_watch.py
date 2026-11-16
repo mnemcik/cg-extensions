@@ -98,10 +98,10 @@ class Keyset(unittest.TestCase):
 
     def test_deletion_during_fallback_is_recovered(self):
         # Five items in one second (page size 2) force the fallback. An item vanishes
-        # while page 2 of the first offset read is requested, so that read skips one;
-        # the re-reads recover it and then agree.
+        # while page 2 of the first offset read is requested (request 4), so that read
+        # skips item 3; the re-reads recover it and then agree.
         def delete_during_fallback(n, api):
-            if n == 3:
+            if n == 4:
                 api.items.pop(1, None)
         api = FakeAPI([(i, 20) for i in range(1, 6)] + [(9, 40)], delete_during_fallback)
         got = self.fetch(api)

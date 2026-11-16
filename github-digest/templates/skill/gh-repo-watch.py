@@ -102,7 +102,7 @@ FALLBACK_READS = 5  # max offset reads of one stalled second before giving up
 
 
 def gh_since_keyset(path: str, since: dt.datetime) -> list:
-    """Everything in `path` updated after `since`, read by keyset rather than page number.
+    """Everything in `path` updated at or after `since`, read by keyset rather than page number.
 
     Page-number paging is an offset into a live list: an item deleted or transferred
     mid-run pulls the rest one place earlier, so the item at the next boundary is
