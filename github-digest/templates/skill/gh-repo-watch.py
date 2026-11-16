@@ -19,9 +19,9 @@ Writes to DIR:
 Prints manifest.json to stdout. The next run's --since is manifest["cursor_out"].
 
 Endpoints (all filter on updated_at "after" --since; see SKILL.md next to this file):
-    GET  /repos/{o}/{r}/issues?state=all&sort=updated&direction=desc&since=   (issues + PRs)
-    GET  /repos/{o}/{r}/issues/comments?sort=updated&direction=desc&since=
-    GET  /repos/{o}/{r}/pulls/comments?sort=updated&direction=desc&since=
+    GET  /repos/{o}/{r}/issues?state=all&sort=updated&direction=asc&since=   (issues + PRs; keyset)
+    GET  /repos/{o}/{r}/issues/comments?sort=updated&direction=asc&since=   (keyset)
+    GET  /repos/{o}/{r}/pulls/comments?sort=updated&direction=asc&since=    (keyset)
     GET  /repos/{o}/{r}/pulls/{n}/reviews          (per active PR; no since filter exists)
     GET  /repos/{o}/{r}/releases                    (filtered client-side on published_at)
     POST /graphql  repository.discussions(orderBy: UPDATED_AT DESC)  (paged until older than since)
@@ -77,35 +77,80 @@ def run_gh(args: list) -> str:
     return p.stdout
 
 
-RECONCILED = {"added_by_second_pass": 0}
+PAGE = 100  # REST page size (max 100); tests shrink it
 
 
-def gh_paginate(path: str, passes: int = 1) -> list:
+def gh_paginate(path: str) -> list:
     """REST GET with --paginate --slurp (gh >= 2.48): pages flattened, deduplicated by id.
-
-    Pages are offsets into a live list, so the list can move under us:
-    - An item that *changes* mid-run moves to the front (updated-desc order), onto a
-      page already read, pushing the rest one place later: they repeat (deduplicated
-      here) rather than get skipped. The moved item was updated after cursor_out, so
-      the next run picks it up.
-    - An item that *disappears* mid-run (deleted, transferred) pulls the rest one place
-      earlier, so the item at the next page boundary is skipped. With passes=2 the list
-      is read again and the two reads are merged: an item is lost only if both reads
-      skip it, which needs a second disappearance at the same boundary.
-    Items seen only by the second read are counted in RECONCILED: skipped items, but
-    also anything created or updated between the reads, so non-zero is normal on a
-    busy repo."""
+    Used for lists with no `since` window (releases, one PR's reviews)."""
     seen, items = set(), []
-    for n in range(passes):
-        for page in json.loads(run_gh(["api", "--paginate", "--slurp", path])):
-            for item in page:
-                key = item.get("id", id(item))
-                if key not in seen:
-                    seen.add(key)
-                    items.append(item)
-                    if n > 0:
-                        RECONCILED["added_by_second_pass"] += 1
+    for page in json.loads(run_gh(["api", "--paginate", "--slurp", path])):
+        for item in page:
+            key = item.get("id", id(item))
+            if key not in seen:
+                seen.add(key)
+                items.append(item)
     return items
+
+
+def gh_page(path: str) -> list:
+    return json.loads(run_gh(["api", path]))
+
+
+STATS = {"keyset_requests": 0, "offset_fallbacks": 0}
+
+
+def gh_since_keyset(path: str, since: dt.datetime) -> list:
+    """Everything in `path` updated after `since`, read by keyset rather than page number.
+
+    Page-number paging is an offset into a live list: an item deleted or transferred
+    mid-run pulls the rest one place earlier, so the item at the next boundary is
+    skipped for good. Instead, each request asks for `since` = the newest `updated_at`
+    already seen (minus 1 s, so ties at that second are re-read and deduplicated),
+    oldest first. A deletion can't shift anything: the next request starts from a
+    timestamp, not an offset. An item updated mid-run moves to the end, so it is read
+    later, not lost.
+
+    One residual case: more than PAGE items updated within the same second would stall
+    the keyset (the newest timestamp can't advance). Then that second is read by page
+    number (offset fallback, counted in STATS), the only place a mid-run deletion could
+    still skip an item.
+    """
+    sep = "&" if "?" in path else "?"
+    seen, items = set(), []
+    cur = since
+
+    def take(page) -> int:
+        added = 0
+        for item in page:
+            if item["id"] not in seen:
+                seen.add(item["id"])
+                items.append(item)
+                added += 1
+        return added
+
+    while True:
+        q = f"{path}{sep}sort=updated&direction=asc&per_page={PAGE}&since={iso(cur - dt.timedelta(seconds=1))}"
+        page = gh_page(q)
+        STATS["keyset_requests"] += 1
+        take(page)
+        if len(page) < PAGE:
+            return items
+        newest = max(ts(i["updated_at"]) for i in page)
+        if newest > cur:
+            cur = newest
+            continue
+        # Stalled: a full page within one second. Read that second by page number.
+        STATS["offset_fallbacks"] += 1
+        n = 2
+        while True:
+            more = gh_page(f"{q}&page={n}")
+            STATS["keyset_requests"] += 1
+            take(more)
+            if len(more) < PAGE or max(ts(i["updated_at"]) for i in more) > cur:
+                break
+            n += 1
+        cur = cur + dt.timedelta(seconds=1)
 
 
 def fetch_releases(base: str, since: dt.datetime) -> list:
@@ -197,9 +242,8 @@ def main() -> int:
     out = Path(a.out)
     (out / "raw").mkdir(parents=True, exist_ok=True)
     base = f"repos/{owner}/{name}"
-    q = f"sort=updated&direction=desc&per_page=100&since={iso(since)}"
 
-    issues = [i for i in gh_paginate(f"{base}/issues?state=all&{q}", passes=2) if ts(i["updated_at"]) > since]
+    issues = [i for i in gh_since_keyset(f"{base}/issues?state=all", since) if ts(i["updated_at"]) > since]
     write(out / "raw/issues.json", json.dumps(issues, indent=1))
     if a.count_only:
         prs = sum(1 for i in issues if "pull_request" in i)
@@ -214,8 +258,8 @@ def main() -> int:
         print(json.dumps(res, indent=1))
         return 0
 
-    icomments = [c for c in gh_paginate(f"{base}/issues/comments?{q}", passes=2) if ts(c["updated_at"]) > since]
-    rcomments = [c for c in gh_paginate(f"{base}/pulls/comments?{q}", passes=2) if ts(c["updated_at"]) > since]
+    icomments = [c for c in gh_since_keyset(f"{base}/issues/comments", since) if ts(c["updated_at"]) > since]
+    rcomments = [c for c in gh_since_keyset(f"{base}/pulls/comments", since) if ts(c["updated_at"]) > since]
     releases = fetch_releases(base, since)
     discussions = fetch_discussions(owner, name, since)
 
@@ -402,7 +446,7 @@ def main() -> int:
         "review_comments": len(rcomments), "reviews": sum(map(len, reviews.values())),
         "review_calls": review_calls,
         "orphaned_events": orphans,
-        "reconciled_by_second_pass": RECONCILED["added_by_second_pass"],
+        "keyset_requests": STATS["keyset_requests"], "offset_fallbacks": STATS["offset_fallbacks"],
         "releases": [r["tag_name"] for r in releases], "merged_prs": len(merged),
         "chunks": chunk_index, "out": str(out.resolve()),
     }

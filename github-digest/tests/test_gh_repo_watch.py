@@ -12,40 +12,97 @@ w = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(w)
 
 
-def pages(*ids_per_page):
-    return json.dumps([[{"id": i} for i in page] for page in ids_per_page])
+T0 = dt.datetime(2026, 11, 1, tzinfo=dt.timezone.utc)
 
 
-class PaginateReconcile(unittest.TestCase):
+def at(sec: int) -> str:
+    return w.iso(T0 + dt.timedelta(seconds=sec))
+
+
+class FakeAPI:
+    """A live list served like GitHub: `since` (updated after), sort=updated asc,
+    per_page and page. `on_request(n, api)` mutates the list between requests."""
+
+    def __init__(self, items, on_request=None):
+        self.items = {i: s for i, s in items}  # id -> updated second
+        self.on_request = on_request
+        self.n = 0
+
+    def __call__(self, args):
+        self.n += 1
+        if self.on_request:
+            self.on_request(self.n, self)
+        url = args[-1]
+        q = dict(kv.split("=", 1) for kv in url.split("?", 1)[1].split("&"))
+        since = w.ts(q["since"])
+        per, page = int(q["per_page"]), int(q.get("page", 1))
+        rows = sorted((s, i) for i, s in self.items.items() if T0 + dt.timedelta(seconds=s) > since)
+        rows = rows[(page - 1) * per: page * per]
+        return json.dumps([{"id": i, "updated_at": at(s)} for s, i in rows])
+
+
+class Keyset(unittest.TestCase):
     def setUp(self):
-        w.RECONCILED["added_by_second_pass"] = 0
-        self._run_gh = w.run_gh
+        self._run_gh, self._page = w.run_gh, w.PAGE
+        w.PAGE = 2
+        w.STATS.update(keyset_requests=0, offset_fallbacks=0)
 
     def tearDown(self):
-        w.run_gh = self._run_gh
+        w.run_gh, w.PAGE = self._run_gh, self._page
 
-    def fake(self, *responses):
-        it = iter(responses)
-        w.run_gh = lambda args: next(it)
+    def fetch(self, api):
+        w.run_gh = api
+        return sorted(i["id"] for i in w.gh_since_keyset("repos/o/r/issues?state=all", T0))
 
-    def test_deletion_between_pages_is_recovered_by_second_pass(self):
-        # Live list 1..4, two per page. Item 1 is deleted after page 1 is read, so page
-        # 2 (offset 2) starts at item 4 and item 3 is skipped by the first read.
-        self.fake(pages([1, 2], [4]), pages([2, 3], [4]))
-        got = [i["id"] for i in w.gh_paginate("x", passes=2)]
-        self.assertEqual(sorted(got), [1, 2, 3, 4])
-        self.assertEqual(w.RECONCILED["added_by_second_pass"], 1)
+    def test_reads_everything(self):
+        api = FakeAPI([(i, 10 * i) for i in range(1, 8)])
+        self.assertEqual(self.fetch(api), list(range(1, 8)))
 
-    def test_change_mid_run_repeats_are_deduplicated(self):
-        # Desc order: item 3 changes after page 1 and jumps to the front; the rest shift
-        # one place later, so item 2 repeats on page 2.
-        self.fake(pages([1, 2], [2, 4]))
-        got = [i["id"] for i in w.gh_paginate("x")]
-        self.assertEqual(got, [1, 2, 4])
+    def test_deletion_mid_run_skips_nothing(self):
+        # Offset paging would skip item 3 here: item 1 vanishes after the first page.
+        def delete_first(n, api):
+            if n == 2:
+                api.items.pop(1, None)
+        api = FakeAPI([(i, 10 * i) for i in range(1, 6)], delete_first)
+        self.assertEqual(self.fetch(api), [1, 2, 3, 4, 5])
 
-    def test_single_pass_reads_once(self):
-        self.fake(pages([1], []))
-        self.assertEqual([i["id"] for i in w.gh_paginate("x")], [1])
+    def test_repeated_deletions_skip_nothing(self):
+        # The case two passes could miss: a deletion ahead of the next item on every request.
+        def delete_oldest(n, api):
+            if n > 1 and api.items:
+                api.items.pop(min(api.items, key=api.items.get))
+        api = FakeAPI([(i, 10 * i) for i in range(1, 9)], delete_oldest)
+        got = self.fetch(api)
+        self.assertTrue(api.items, "the scenario must leave survivors")
+        # Every item that existed for the whole run is read; deleted ones may or may not be.
+        self.assertTrue(set(api.items) <= set(got), (sorted(api.items), got))
+        self.assertEqual(len(got), len(set(got)))
+
+    def test_update_mid_run_is_still_read(self):
+        def bump(n, api):
+            if n == 2:
+                api.items[1] = 1000  # item 1 updated: moves to the end
+        api = FakeAPI([(i, 10 * i) for i in range(1, 6)], bump)
+        self.assertEqual(self.fetch(api), [1, 2, 3, 4, 5])
+
+    def test_same_second_ties_at_page_boundary(self):
+        api = FakeAPI([(1, 10), (2, 20), (3, 20), (4, 20), (5, 30)])
+        self.assertEqual(self.fetch(api), [1, 2, 3, 4, 5])
+
+    def test_more_than_a_page_in_one_second_falls_back(self):
+        api = FakeAPI([(i, 20) for i in range(1, 6)] + [(9, 40)])
+        self.assertEqual(self.fetch(api), [1, 2, 3, 4, 5, 9])
+        self.assertEqual(w.STATS["offset_fallbacks"], 1)
+
+
+class Paginate(unittest.TestCase):
+    def test_dedupes_by_id(self):
+        old = w.run_gh
+        try:
+            w.run_gh = lambda args: json.dumps([[{"id": 1}, {"id": 2}], [{"id": 2}, {"id": 4}]])
+            self.assertEqual([i["id"] for i in w.gh_paginate("x")], [1, 2, 4])
+        finally:
+            w.run_gh = old
 
 
 class ParseSince(unittest.TestCase):
