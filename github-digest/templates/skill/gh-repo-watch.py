@@ -1,19 +1,20 @@
 #!/usr/bin/env python3
 """Pull a public GitHub repo's activity since a cursor, grouped per thread.
 
-Replaces the Gmail-notification digest: instead of reading notification emails,
-query the GitHub API directly with a `since` cursor. Read-only; uses `gh` for auth
+An alternative to the Gmail-notification digest (gmail-digest): instead of reading
+notification emails, query the GitHub API directly with a `since` cursor. Read-only; uses `gh` for auth
 (so the gh-account-resolver routes it like any other call).
 
-Usage:
-    gh-repo-watch.py OWNER/REPO --since 2026-11-13T09:00:00Z --out DIR
-    gh-repo-watch.py OWNER/REPO --since 1794547684 --out DIR   # epoch also accepted
-    gh-repo-watch.py OWNER/REPO --since 30d --out DIR --count-only
+Usage (cg installs templates without the execute bit, so run it through python3):
+    python3 gh-repo-watch.py OWNER/REPO --since 2026-11-13T09:00:00Z --out DIR
+    python3 gh-repo-watch.py OWNER/REPO --since 1794547684 --out DIR   # epoch also accepted
+    python3 gh-repo-watch.py OWNER/REPO --since 30d --out DIR --count-only
 
 Writes to DIR:
     raw/*.json           every API result, unmodified
     summary.md           counts, releases, merged PRs, new issues, rolled-up threads
     chunk-NN.md          per-thread text for the human-signal threads, ~60k chars each
+                         (existing chunk-*.md files in DIR are deleted first)
     manifest.json        cursor in/out, counts, chunk list, thread numbers per chunk
 
 Prints manifest.json to stdout. The next run's --since is manifest["cursor_out"].

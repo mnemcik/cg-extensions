@@ -12,7 +12,7 @@ Digest a public GitHub repo by querying its activity since a saved cursor, then 
 ## Inputs
 
 - **Target:** `notes/github-digest-targets/<slug>.md`, one per watched repo. It holds the repo, the **Cursor** (an ISO timestamp, the next run's `--since`), domain context for the analysis, and the Digest History table. New targets start from `templates/github-digest-target.md`.
-- **Fetcher:** `gh-repo-watch.py`, in this skill's directory, run as `"$(git rev-parse --show-toplevel)/.claude/skills/github-digest/gh-repo-watch.py"`, which works from any subdirectory and in worktrees. It is read-only, needs `gh` ≥ 2.48 (authenticated) and Python 3.9+, and has no other dependencies. On Windows, use `python` or `py` if `python3` isn't on `PATH`.
+- **Fetcher:** `gh-repo-watch.py`, in this skill's directory. Run it through Python, since cg installs templates without the execute bit: `python3 "$(git rev-parse --show-toplevel)/.claude/skills/github-digest/gh-repo-watch.py"`. That path works from any subdirectory and in worktrees. It is read-only, needs `gh` ≥ 2.48 (authenticated) and Python 3.9+, and has no other dependencies. On Windows, use `python` or `py` if `python3` isn't on `PATH`.
 
 If the user names a repo that has no target, offer to create one (see *Adding a target*), not to run without one.
 
@@ -33,7 +33,7 @@ If the user names a repo that has no target, offer to create one (see *Adding a 
    ```sh
    python3 "$(git rev-parse --show-toplevel)/.claude/skills/github-digest/gh-repo-watch.py" OWNER/REPO --since <cursor> --out <out>
    ```
-   It writes the following files:
+   It writes the following files into `<out>`. It first **deletes any `chunk-*.md` already there**, so give each run its own `<out>` or don't keep anything there.
    - `summary.md`: counts, releases, merged PRs, and the list of rolled-up threads
    - `chunk-NN.md`: per-thread text, about 60k characters each. Each thread holds the opening post when the thread is new, then every human comment, review and review-line comment in the window, oldest first, quoted with `> `. Bot comments are collapsed to one count line.
    - `raw/*.json`: the unmodified API results
@@ -54,7 +54,7 @@ If the user names a repo that has no target, offer to create one (see *Adding a 
 ## How the fetcher selects
 
 - **Endpoints:**
-  - `issues` (issues and PRs), `issues/comments` and `pulls/comments`, read by **keyset**: `sort=updated`, `direction=asc`, and each request's `since` set to the newest `updated_at` already seen, with dedupe by id. GitHub's `since` is inclusive (at or after), so ties at that second are re-read. Page numbers would be offsets into a live list, where a deletion mid-run makes the next item skip; a keyset can't shift. An item updated mid-run moves to the end and is read later. The one exception is 100 or more items updated within the same second, which stalls the keyset. That second is then read by page number, repeatedly, until two consecutive reads agree, and counted as `offset_fallbacks`. If five reads never agree, the second is listed in `unverified_seconds` and `cursor_out` is held just before it, so the next run reads it again. Say so in Data Caveats.
+  - `issues` (issues and PRs), `issues/comments` and `pulls/comments`, read by **keyset**: `sort=updated`, `direction=asc`, and each request's `since` set to the newest `updated_at` already seen, with dedupe by id. GitHub's `since` is inclusive (at or after), so ties at that second are re-read. Page numbers would be offsets into a live list, where a deletion mid-run makes the next item skip; a keyset can't shift. An item updated mid-run moves to the end and is read later. The one exception is 100 or more items updated within the same second, which stalls the keyset. That second is then read by page number, repeatedly, until two consecutive reads agree, and counted as `offset_fallbacks`. If five reads never agree, the second is listed in `unverified_seconds` and `cursor_out` is held just before it, so the next run reads it again. Say so in Data Caveats. If the same second shows up in `unverified_seconds` digest after digest, the cursor can't move past it. Tell the user, and offer to set the target's Cursor one second past it by hand. That accepts a possible gap in that second, and the decision is theirs.
   - `pulls/{n}/reviews`, called once per PR active in the window, because reviews have no `since` filter.
   - `releases`, filtered on `published_at`.
   - GraphQL `discussions`, ordered `UPDATED_AT DESC` and paged back to the cursor.
@@ -75,6 +75,7 @@ If the user names a repo that has no target, offer to create one (see *Adding a 
 - **Commits pushed straight to the default branch without a PR.** If a repo works that way, add `gh api 'repos/O/R/commits?since=<cursor>'` by hand and say so in Data Caveats.
 - **Reactions, project-board moves, and timeline events** such as labelled, assigned or cross-referenced.
 - **Discussion comments beyond the last 50 per discussion, or the last 20 replies per comment.**
+- **Discussion paging under deletion.** Discussions are paged with GraphQL connection cursors (newest-updated first), not page offsets. A deleted discussion shouldn't shift the others, but GitHub doesn't document how its cursors behave when the list changes, so this hasn't been verified.
 - **Edits to discussion comments,** when the edit didn't bump the discussion's own `updatedAt`. Discussions are paged by that field.
 - **A human review on a bot-authored PR that is still open and has no human comment.** Reviews cost one call per PR, so they are fetched only for PRs with a human author or a human comment, and for PRs merged or closed in the window.
 

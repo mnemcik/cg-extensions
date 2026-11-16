@@ -46,10 +46,11 @@ python3 "$(git rev-parse --show-toplevel)/.claude/skills/github-digest/gh-repo-w
 python3 "$(git rev-parse --show-toplevel)/.claude/skills/github-digest/gh-repo-watch.py" OWNER/REPO --since 30d --out /tmp/x
 ```
 
-`--since` accepts an ISO time, a Unix epoch, or `Nd`. The run prints its manifest, and the next run's `--since` is `cursor_out`.
+`--since` accepts an ISO time, a Unix epoch, or `Nd`. The run prints its manifest, and the next run's `--since` is `cursor_out`. The fetcher deletes any existing `chunk-*.md` in `--out` before writing, so use a scratch directory per run.
 
 ## Requirements
 
+- Claude Code: the extension ships a Claude Code skill under `.claude/skills/`.
 - `gh` 2.48 or later (for `gh api --slurp`), authenticated. Public repos work with any account.
 - Python 3.9+, standard library only.
 - On Windows, call the fetcher with `python` or `py` if `python3` isn't on `PATH`. All I/O is explicit UTF-8.
@@ -68,4 +69,4 @@ If you digested a repo through `gmail-digest`, you can move it here without a ga
 2. Set Cursor to the last digest's Last Message Epoch. `--since` accepts an epoch.
 3. Turn off the repo's notification email.
 
-The `gmail-digest` trigger rule also matches "digest X". When a target exists in `notes/github-digest-targets/`, this skill is the more specific match.
+The `gmail-digest` trigger rule also matches "digest X", and it maps that to Gmail with no exception for GitHub targets. With both extensions installed, which one runs isn't guaranteed. To be sure, invoke `/github-digest <target>` explicitly, or remove `gmail-digest` if you no longer digest anything from Gmail.
