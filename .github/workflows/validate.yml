@@ -132,3 +132,17 @@ jobs:
       - uses: actions/checkout@v4
       - name: Run the cg live test suite against a fake claude
         run: live-runs/tests/run.sh
+
+  tmux-tests:
+    # macOS covers /bin/bash 3.2 and BSD tools; Ubuntu covers bash 5 and GNU tools.
+    strategy:
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install tmux (to check the bundled tmux.conf loads)
+        run: |
+          if [ "$RUNNER_OS" = macOS ]; then brew install tmux; else sudo apt-get update -qq && sudo apt-get install -y -qq tmux; fi
+      - name: Run the cg-tmux test suite
+        run: tmux/tests/run.sh
