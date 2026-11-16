@@ -50,15 +50,15 @@ python3 .claude/skills/github-digest/gh-repo-watch.py OWNER/REPO --since 30d --o
 
 ## Requirements
 
-- `gh`, authenticated. Public repos work with any account.
+- `gh` 2.48 or later (for `gh api --slurp`), authenticated. Public repos work with any account.
 - Python 3.9+, standard library only.
-- On Windows, call the fetcher with `python` or `py` if `python3` isn't on `PATH`.
+- On Windows, call the fetcher with `python` or `py` if `python3` isn't on `PATH`. All I/O is explicit UTF-8.
 
 ## Limits
 
 - **Commits pushed straight to the default branch without a PR are not fetched.**
 - **Some activity is not covered:** reactions, project-board moves, and timeline events such as labelled or assigned.
-- **Discussions are read only partly:** the last 50 comments, with up to 20 replies each.
+- **Discussions are read only partly:** the last 50 comments, with up to 20 replies each. Comment edits that don't bump the discussion's `updatedAt` are missed.
 
 ## Coming from `gmail-digest`
 
