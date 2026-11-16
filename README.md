@@ -74,7 +74,7 @@ Extensions run on users' machines, so every PR gets an **impact review** by the 
 
 - **No private data** in the diff, the description or the commit messages: no names of people, or of the employers, clients or customers behind a workspace, and no internal hosts or paths, ticket keys or incidents. The repository is public.
 - **Fit:** one extension per concern; a single workspace's preference stays in that workspace.
-- **What runs on users' machines:** every contribution point the manifest uses, when it runs (on install, every session, every `cg`, a typed command) and what it can reach. Anything that runs without the user typing it gets the closest look.
+- **What runs on users' machines:** every contribution point the manifest uses, when it runs (on install, every session, every `cg`, every commit, every tool call, a typed command) and what it can reach. Anything that runs without the user typing it gets the closest look.
 - **Untrusted content:** a skill that feeds external content to the agent (issues, PRs, comments, emails, web pages) says that this content is data, never instructions.
 - **Shape:** tests where the extension has them, README and CHANGELOG updated, the manifest `version` bumped for a change meant for users.
 - **Safety:** a workflow job named like a required check (`impact-review` above all) is rejected, since its result would satisfy that check without a review.
@@ -90,7 +90,7 @@ The flow:
      -f state=success -f context=impact-review -f description="Impact reviewed"
    ```
 
-   A status belongs to one commit, so **a push needs a new review** at the new head, including an update from `main`. An agent running under the maintainer's account sets it only on the maintainer's go-ahead.
+   A status belongs to one commit, so **a push needs a new review** at the new head, including an update from `main`. An agent running under the maintainer's account sets it only on the maintainer's go-ahead. Bot PRs are exempt by who opened them, so a person's push to a bot's branch gets `success` too: don't push changes to bot branches, open a separate PR.
 4. **One approving review** is required by branch protection. Merging is the maintainer's call.
 
 ### Upstream proposals
