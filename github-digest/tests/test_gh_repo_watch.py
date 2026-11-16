@@ -180,6 +180,10 @@ class Cli(unittest.TestCase):
     def test_bad_repo_and_since_are_usage_errors(self):
         self.assertEqual(self.run_main("norepo", "--since", "1d", "--out", "x"), 2)
         self.assertEqual(self.run_main("o/r", "--since", "yesterday", "--out", "x"), 2)
+        for repo in ("../..", "o/..", "ö/r", "o/r/x", "/r"):
+            self.assertEqual(self.run_main(repo, "--since", "1d", "--out", "x"), 2, repo)
+        for since in ("99999999999999999999", "99999999d", "10000000000000d", "9999999999999"):
+            self.assertEqual(self.run_main("o/r", "--since", since, "--out", "x"), 2, since)
 
     def test_cursor_out_is_a_whole_second_in_the_past(self):
         import contextlib, io, sys, tempfile

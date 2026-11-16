@@ -255,12 +255,15 @@ def main() -> int:
     ap.add_argument("--count-only", action="store_true", help="fetch issues/PRs only, print counts")
     a = ap.parse_args()
 
-    if not re.fullmatch(r"[\w.-]+/[\w.-]+", a.repo):
+    # GitHub owners are ASCII alphanumerics and "-"; repos add "." and "_" ("." and ".."
+    # alone are not names, and would turn the API path into a traversal).
+    m = re.fullmatch(r"([A-Za-z0-9-]+)/([A-Za-z0-9._-]+)", a.repo)
+    if not m or m.group(2) in (".", ".."):
         ap.error(f"repo must be OWNER/REPO, got {a.repo!r}")
     owner, name = a.repo.split("/", 1)
     try:
         since = parse_since(a.since)
-    except ValueError:
+    except (ValueError, OverflowError, OSError):
         ap.error(f"--since must be an ISO time, a Unix epoch or Nd, got {a.since!r}")
     # Taken before fetching, and rounded down to a whole second minus one: timestamps
     # are whole seconds and the next run keeps only updates after this cursor, so an
