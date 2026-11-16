@@ -17,6 +17,7 @@ independently.
 | [`bundle-backup`](bundle-backup/) | Backs up the workspace as a `git bundle` to a folder (e.g. a synced company drive) after every commit, merge or rewrite — no git remote needed. Uses the `git-hooks` contribution point (cg 1.25+). |
 | [`obsidian`](obsidian/) | Makes the workspace work as an Obsidian vault — seeded vault config, per-machine state gitignored, a Bases view of active projects, and a note on the link/tag/Bases gotchas. Uses the `gitignore` contribution point. |
 | [`shopping`](shopping/) | One shared shopping list for the workspace — `cg shop` adds items from any project, groups open items by supplier so one order covers every project, and tracks needed → ordered → received. One file per item, so parallel sessions never conflict. |
+| [`github-digest`](github-digest/) | Digests a watched GitHub repo's activity since the last digest straight from the GitHub API, so you need no notification email: a skill (no CLAUDE.md section) and a read-only `gh` fetcher, with one target file and since-cursor per repo. Ships its skill via `templates` into `.claude/skills/`. |
 
 ## Install
 
