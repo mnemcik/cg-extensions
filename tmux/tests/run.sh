@@ -80,14 +80,16 @@ contains "no tty" "ARG[z]"
 # --- the bundled config parses (real tmux only, when installed) ---
 if command -v tmux >/dev/null 2>&1; then
   sock="cg-tmux-test-$$"
-  if tmux -L "$sock" -f "$CONF" new-session -d -s t 'sleep 5' 2>"$T/conf.err"; then
+  if tmux -L "$sock" -f "$CONF" new-session -d -s t 'sleep 60' 2>"$T/conf.err"; then
     ok
     [ "$(tmux -L "$sock" show -gv escape-time 2>/dev/null)" = 10 ] && ok || bad "tmux.conf: escape-time not applied"
+    # a failing line doesn't fail new-session (tmux carries on); source-file reports it
+    if tmux -L "$sock" source-file "$CONF" 2>"$T/conf.err" && [ ! -s "$T/conf.err" ]; then ok; else bad "tmux.conf has an error: $(head -1 "$T/conf.err")"; fi
     [ "$(tmux -L "$sock" show -gv set-titles 2>/dev/null)" = on ] && ok || bad "tmux.conf: set-titles not applied"
     [ "$(tmux -L "$sock" show -gv set-titles-string 2>/dev/null)" = '#T' ] && ok || bad "tmux.conf: set-titles-string not applied"
     if tmux -L "$sock" show -gwv allow-passthrough >/dev/null 2>&1; then
       ap=$(tmux -L "$sock" show -gwv allow-passthrough 2>/dev/null); want=on
-      tmux -L "$sock" display -p -t t '#{e|>=|f:#{version},3.4}' 2>/dev/null | grep -q '^1' && want=all
+      [ "$(tmux -L "$sock" display -p -t t '#{e|>=|f|0:#{version},3.4}' 2>/dev/null)" = 1 ] && want=all
       [ "$ap" = "$want" ] && ok || bad "tmux.conf: allow-passthrough is '$ap', want '$want'"
     fi
   else

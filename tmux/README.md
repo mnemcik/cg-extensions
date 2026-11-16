@@ -38,6 +38,8 @@ tmux -L cg attach -t <name>        # or to a specific one
 tmux -L cg kill-session -t <name>  # stop one from outside
 ```
 
+**Passthrough trade-off.** With passthrough on, any program printing in any pane of cg's tmux server (on tmux 3.4+ also panes that aren't visible) can send escape sequences straight to your terminal: clipboard writes, the title, terminal-specific sequences. That is what happens without tmux, but tmux no longer filters them. A pane that shows raw command output, such as the `live-runs` watch split, is one such pane.
+
 Inside tmux, `Ctrl+B` is tmux's prefix key: Claude Code's own `Ctrl+B` (move a command to the background) needs it twice. A terminal's own features that work per tab (Warp's blocks, for example) don't apply inside tmux.
 
 ## Requirements
