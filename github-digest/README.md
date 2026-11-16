@@ -18,7 +18,7 @@ On "digest <slug>", the skill does five things:
 
 1. Runs the fetcher for everything updated since the cursor: issues and PRs, comments, review comments, reviews, releases and discussions.
 2. Groups the activity per thread into chunks of about 60k characters.
-3. Rolls up threads that only bots touched.
+3. Rolls up threads with no human comment or review, such as stale-bot marks, CI and label-only changes.
 4. Reads the chunks, fanning out to subagents when the window is large.
 5. Writes `notes/<slug>-digest-YYYY-MM-DD/analysis.md` and advances the cursor.
 
@@ -42,8 +42,8 @@ digest gascity                     → or "check gascity updates", or /github-di
 The fetcher on its own:
 
 ```sh
-python3 .claude/skills/github-digest/gh-repo-watch.py OWNER/REPO --since 2026-11-13T00:00:00Z --out /tmp/x --count-only
-python3 .claude/skills/github-digest/gh-repo-watch.py OWNER/REPO --since 30d --out /tmp/x
+python3 "$(git rev-parse --show-toplevel)/.claude/skills/github-digest/gh-repo-watch.py" OWNER/REPO --since 2026-11-13T00:00:00Z --out /tmp/x --count-only
+python3 "$(git rev-parse --show-toplevel)/.claude/skills/github-digest/gh-repo-watch.py" OWNER/REPO --since 30d --out /tmp/x
 ```
 
 `--since` accepts an ISO time, a Unix epoch, or `Nd`. The run prints its manifest, and the next run's `--since` is `cursor_out`.

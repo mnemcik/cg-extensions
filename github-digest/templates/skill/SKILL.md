@@ -10,7 +10,7 @@ Digest a public GitHub repo by querying its activity since a saved cursor, then 
 ## Inputs
 
 - **Target:** `notes/github-digest-targets/<slug>.md`, one per watched repo. It holds the repo, the **Cursor** (an ISO timestamp, the next run's `--since`), domain context for the analysis, and the Digest History table. New targets start from `templates/github-digest-target.md`.
-- **Fetcher:** `gh-repo-watch.py`, in this skill's directory, so its path is `$CLAUDE_PROJECT_DIR/.claude/skills/github-digest/gh-repo-watch.py`. It is read-only, needs `gh` ≥ 2.48 (authenticated) and Python 3.9+, and has no other dependencies. On Windows, use `python` or `py` if `python3` isn't on `PATH`.
+- **Fetcher:** `gh-repo-watch.py`, in this skill's directory, run as `"$(git rev-parse --show-toplevel)/.claude/skills/github-digest/gh-repo-watch.py"`, which works from any subdirectory and in worktrees. It is read-only, needs `gh` ≥ 2.48 (authenticated) and Python 3.9+, and has no other dependencies. On Windows, use `python` or `py` if `python3` isn't on `PATH`.
 
 If the user names a repo that has no target, offer to create one (see *Adding a target*), not to run without one.
 
@@ -20,19 +20,19 @@ If the user names a repo that has no target, offer to create one (see *Adding a 
 2. **Read the target file**: repo, Cursor, domain context, history. Check the history table against the `notes/<slug>-digest-*/` folders on disk, and backfill any missing row.
 3. **Size the window.** `<out>` is a scratch directory outside the repo (the session scratchpad, if there is one), because the raw corpus is input, not a note.
    ```sh
-   python3 "$CLAUDE_PROJECT_DIR/.claude/skills/github-digest/gh-repo-watch.py" OWNER/REPO --since <cursor> --out <out> --count-only
+   python3 "$(git rev-parse --show-toplevel)/.claude/skills/github-digest/gh-repo-watch.py" OWNER/REPO --since <cursor> --out <out> --count-only
    ```
    This prints thread counts for issues and PRs only. If the target has no cursor yet, ask the user for a starting window (`30d`, a date, or "from now"), and give them a `--count-only` figure for it.
-4. **Choose a strategy from the size.** Go by `signal_estimate`, the threads not authored by a bot. It is an upper bound, because the full fetch also rolls up bot threads no human commented on.
+4. **Choose a strategy from the size.** Go by `signal_estimate`, the threads not authored by a bot. It is a rough figure, not a bound. The full fetch adds bot threads a human commented on, and rolls up human threads that only had label or state changes.
    - **≲ 300:** read every chunk yourself.
    - **Larger:** tell the user the size first. Then fan out: one subagent per chunk (~60k characters, about 15k tokens), each given the target's domain context and the per-entry format, writing `batch-NN.md`. Then merge.
    - **Very large** (thousands of threads): offer a narrower window instead.
 5. **Fetch:**
    ```sh
-   python3 "$CLAUDE_PROJECT_DIR/.claude/skills/github-digest/gh-repo-watch.py" OWNER/REPO --since <cursor> --out <out>
+   python3 "$(git rev-parse --show-toplevel)/.claude/skills/github-digest/gh-repo-watch.py" OWNER/REPO --since <cursor> --out <out>
    ```
    It writes the following files:
-   - `summary.md`: counts, releases, merged PRs, and the list of rolled-up bot-only threads
+   - `summary.md`: counts, releases, merged PRs, and the list of rolled-up threads
    - `chunk-NN.md`: per-thread text, about 60k characters each. Each thread holds the opening post when the thread is new, then every human comment, review and review-line comment in the window, oldest first, quoted with `> `. Bot comments are collapsed to one count line.
    - `raw/*.json`: the unmodified API results
    - `manifest.json`: `cursor_in`, `cursor_out`, the thread numbers in each chunk, `review_calls`, and `orphaned_events` (comments whose thread wasn't in the issue list; the next run's overlap catches them)
@@ -63,9 +63,9 @@ If the user names a repo that has no target, offer to create one (see *Adding a 
   - a human commented on it or reviewed it;
   - it is human-authored and was opened, closed or merged. The closer may be a bot, such as a stale-bot close, because the API doesn't say who closed a thread without an extra call per thread.
 
-  Everything else (stale marks, CI, dependabot) is listed in `summary.md` and not narrated. A user counts as a bot when its account type is `Bot`, or its login has a `[bot]` suffix or is exactly dependabot, renovate, github-actions or codecov.
+  Everything else is listed in `summary.md` and not narrated. That covers stale marks, CI and dependabot, and human threads whose only activity was a label or state change. A user counts as a bot when its account type is `Bot`, or its login has a `[bot]` suffix or is exactly dependabot, renovate, github-actions or codecov.
 - **Caps.** Opening posts are capped at 3,000 characters and each comment or review at 2,000, with HTML comments stripped. Follow the thread URL when a truncated body matters.
-- **Cost.** Mostly one serial review call per PR a human is involved in, recorded as `review_calls`. Bot-only PRs are skipped. Releases page only back to the cursor. A window with about 1,000 human PRs takes several minutes and roughly a fifth of the 5,000 per hour REST budget, so narrow very large windows.
+- **Cost.** Mostly one serial review call per PR a human is involved in, recorded as `review_calls`. Open bot PRs with no human comment are skipped. A window with about 1,000 human PRs takes several minutes and roughly a fifth of the 5,000 per hour REST budget, so narrow very large windows.
 
 ## Not covered
 
@@ -73,6 +73,7 @@ If the user names a repo that has no target, offer to create one (see *Adding a 
 - **Reactions, project-board moves, and timeline events** such as labelled, assigned or cross-referenced.
 - **Discussion comments beyond the last 50 per discussion, or the last 20 replies per comment.**
 - **Edits to discussion comments,** when the edit didn't bump the discussion's own `updatedAt`. Discussions are paged by that field.
+- **A human review on a bot-authored PR that is still open and has no human comment.** Reviews cost one call per PR, so they are fetched only for PRs with a human author or a human comment, and for PRs merged or closed in the window.
 
 ## Adding a target
 

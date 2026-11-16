@@ -12,7 +12,7 @@ Usage:
 
 Writes to DIR:
     raw/*.json           every API result, unmodified
-    summary.md           counts, releases, merged PRs, new issues, rolled-up bot items
+    summary.md           counts, releases, merged PRs, new issues, rolled-up threads
     chunk-NN.md          per-thread text for the human-signal threads, ~60k chars each
     manifest.json        cursor in/out, counts, chunk list, thread numbers per chunk
 
@@ -87,14 +87,10 @@ def gh_get(path: str):
 
 
 def fetch_releases(base: str, since: dt.datetime) -> list:
-    """Releases newest first; stop paging once a page reaches past the cursor."""
-    found, page = [], 1
-    while True:
-        batch = gh_get(f"{base}/releases?per_page=100&page={page}")
-        found += [r for r in batch if r.get("published_at") and ts(r["published_at"]) > since]
-        if len(batch) < 100 or any(ts(r["created_at"]) <= since for r in batch):
-            return found
-        page += 1
+    """All releases, filtered on published_at. Paged fully: the list is ordered by
+    created_at (the release commit's date), so no page boundary bounds published_at."""
+    return [r for r in gh_paginate(f"{base}/releases?per_page=100")
+            if r.get("published_at") and ts(r["published_at"]) > since]
 
 
 DISC_QUERY = """
@@ -145,10 +141,9 @@ def login(u) -> str:
 
 
 def cap(text: str | None, n: int) -> str:
-    text = (text or "").strip()
     # Drop HTML comments (PR templates, bot metadata) and collapse blank runs.
-    text = re.sub(r"<!--.*?-->", "", text, flags=re.S)
-    text = re.sub(r"\n{3,}", "\n\n", text)
+    text = re.sub(r"<!--.*?-->", "", text or "", flags=re.S)
+    text = re.sub(r"\n{3,}", "\n\n", text).strip()
     if len(text) > n:
         text = text[:n] + f"\n…[truncated, {len(text) - n} more chars]"
     # Quote the body so its own "## " headings can't pass for thread headers.
@@ -189,8 +184,9 @@ def main() -> int:
         bots = sum(1 for i in issues if is_bot(i["user"]))
         res = {"repo": a.repo, "since": iso(since), "threads": len(issues), "prs": prs,
                "issues": len(issues) - prs, "bot_authored": bots,
-               # Upper bound for signal threads: a bot-authored thread is signal only
-               # if a human comments on it, which --count-only doesn't fetch.
+               # Rough size for choosing a strategy, not a bound: the full run adds bot
+               # threads a human commented on and rolls up human threads that saw only
+               # label/state changes, neither of which --count-only can see.
                "signal_estimate": len(issues) - bots,
                "new_since": sum(1 for i in issues if ts(i["created_at"]) > since)}
         print(json.dumps(res, indent=1))
@@ -216,14 +212,17 @@ def main() -> int:
         where = f"review comment on `{c.get('path')}`" + edited(c)
         events[n].append((c["created_at"], login(c["user"]), where, c["body"], is_bot(c["user"])))
 
-    # Reviews have no `since` filter, so they cost one call per PR. Fetch them only for
-    # PRs a human is involved in (human author or human comment); bot-only PRs
-    # (dependabot, renovate) are rolled up anyway.
+    # Reviews have no `since` filter, so they cost one call per PR. Fetch them for PRs a
+    # human is involved in (human author or human comment) and for bot PRs merged or
+    # closed in the window (where a human approval is the likely only human act).
+    # Skipped: bot PRs still open with no human comment (a human review there is missed).
     reviews: dict[int, list] = {}
     review_calls = 0
     for i in issues:
         n = i["number"]
-        if "pull_request" in i and (not is_bot(i["user"]) or any(not e[4] for e in events.get(n, []))):
+        closed_now = bool(i.get("closed_at")) and ts(i["closed_at"]) > since
+        if "pull_request" in i and (not is_bot(i["user"]) or closed_now
+                                    or any(not e[4] for e in events.get(n, []))):
             review_calls += 1
             rv = [r for r in gh_paginate(f"{base}/pulls/{n}/reviews?per_page=100")
                   if r.get("submitted_at") and ts(r["submitted_at"]) > since]
@@ -335,7 +334,7 @@ def main() -> int:
          f"- New issues: {len(new_issues)} · issues closed: {len(closed_issues)} · PRs merged: {len(merged)}",
          f"- Comments: {len(icomments)} issue/PR, {len(rcomments)} review-line, "
          f"{sum(map(len, reviews.values()))} reviews (bot comments are counted here, not narrated)",
-         f"- Signal threads (in chunks): {len(signal)} · rolled-up bot threads: {len(mechanical)}",
+         f"- Signal threads (in chunks): {len(signal)} · rolled-up threads: {len(mechanical)}",
          f"- Orphaned comment events (thread not in the issues list): {sum(orphans.values())}\n",
          "## Releases\n"]
     s += [f"- **{r['tag_name']}** ({r['published_at'][:10]}){' prerelease' if r['prerelease'] else ''}: "
@@ -343,14 +342,14 @@ def main() -> int:
     s += ["\n## Merged PRs\n"]
     s += [f"- #{i['number']} {i['title']} (`{login(i['user'])}`, {i['pull_request']['merged_at'][:10]})"
           for i in sorted(merged, key=lambda i: i["pull_request"]["merged_at"])] or ["- none"]
-    s += ["\n## Rolled-up bot threads (not in chunks)\n"]
+    s += ["\n## Rolled-up threads (not in chunks): no human comment or review, and not a human thread opened/closed in the window\n"]
     s += [f"- #{i['number']} {i['title']} (`{login(i['user'])}`, {i['state']})" for i in mechanical] or ["- none"]
     write(out / "summary.md", "\n".join(s) + "\n")
 
     manifest = {
         "repo": a.repo, "cursor_in": iso(since), "cursor_out": iso(cursor_out),
         "threads": len(issues), "discussions": len(discussions), "signal_threads": len(signal),
-        "bot_threads_rolled_up": len(mechanical), "issue_comments": len(icomments),
+        "rolled_up_threads": len(mechanical), "issue_comments": len(icomments),
         "review_comments": len(rcomments), "reviews": sum(map(len, reviews.values())),
         "review_calls": review_calls,
         "orphaned_events": orphans,
