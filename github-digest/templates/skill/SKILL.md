@@ -38,7 +38,7 @@ If the user names a repo that has no target, offer to create one (see *Adding a 
    - `manifest.json`: `cursor_in`, `cursor_out`, the thread numbers in each chunk, `review_calls`, and `orphaned_events` (comments whose thread wasn't in the issue list; the next run's overlap catches them)
 
    If `gh` fails (404, auth, rate limit), the script prints gh's error and exits 1. Report it; don't retry blindly.
-6. **Read** `summary.md`, then every chunk, with the file-read tool (not `cat`). Write one `batch-NN.md` per chunk into `notes/<slug>-digest-YYYY-MM-DD/`.
+6. **Read** `summary.md`, then every chunk, with the file-read tool (not `cat`). Write one `batch-NN.md` per chunk into `notes/<slug>-digest-YYYY-MM-DD/`. If that folder already exists from an earlier digest the same day, use `notes/<slug>-digest-YYYY-MM-DDb/` (then `c`, …). Never overwrite a digest the history table points to.
    - **Coverage check:** the thread numbers in `manifest.json` minus those in your batch files should be empty, or explained (a thread folded into a sibling on purpose).
 7. **Write `analysis.md`** in the same folder. Use the workspace's note frontmatter (category, tags, **areas**), plus `source: GitHub API (github-digest)`, `period_covered`, `cursor_in` and `cursor_out`. Sections:
    1. **Executive Summary**: the 3–5 things that matter
@@ -52,7 +52,7 @@ If the user names a repo that has no target, offer to create one (see *Adding a 
 ## How the fetcher selects
 
 - **Endpoints:**
-  - `issues` (issues and PRs), `issues/comments` and `pulls/comments`, each with `since`, `sort=updated`, `direction=asc`.
+  - `issues` (issues and PRs), `issues/comments` and `pulls/comments`, each with `since`, `sort=updated`, `direction=desc`. Pages are offsets into a live list, so newest-first plus dedupe by id means an item changing mid-run causes repeats, not gaps. The changed item itself falls after `cursor_out`, so the next run picks it up.
   - `pulls/{n}/reviews`, called once per PR active in the window, because reviews have no `since` filter.
   - `releases`, filtered on `published_at`.
   - GraphQL `discussions`, ordered `UPDATED_AT DESC` and paged back to the cursor.
@@ -64,7 +64,7 @@ If the user names a repo that has no target, offer to create one (see *Adding a 
   - it is human-authored and was opened, closed or merged. The closer may be a bot, such as a stale-bot close, because the API doesn't say who closed a thread without an extra call per thread.
 
   Everything else is listed in `summary.md` and not narrated. That covers stale marks, CI and dependabot, and human threads whose only activity was a label or state change. A user counts as a bot when its account type is `Bot`, or its login has a `[bot]` suffix or is exactly dependabot, renovate, github-actions or codecov.
-- **Caps.** Opening posts are capped at 3,000 characters and each comment or review at 2,000, with HTML comments stripped. Follow the thread URL when a truncated body matters.
+- **Caps.** Opening posts are capped at 3,000 characters and each comment or review at 2,000, with HTML comments stripped. A thread longer than one chunk is split at comment boundaries, and each continuation repeats the thread header with `(continued)`. Follow the thread URL when a truncated body matters.
 - **Cost.** Mostly one serial review call per PR a human is involved in, recorded as `review_calls`. Open bot PRs with no human comment are skipped. A window with about 1,000 human PRs takes several minutes and roughly a fifth of the 5,000 per hour REST budget, so narrow very large windows.
 
 ## Not covered

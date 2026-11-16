@@ -19,9 +19,9 @@ Writes to DIR:
 Prints manifest.json to stdout. The next run's --since is manifest["cursor_out"].
 
 Endpoints (all filter on updated_at "after" --since; see SKILL.md next to this file):
-    GET  /repos/{o}/{r}/issues?state=all&sort=updated&direction=asc&since=   (issues + PRs)
-    GET  /repos/{o}/{r}/issues/comments?sort=updated&direction=asc&since=
-    GET  /repos/{o}/{r}/pulls/comments?sort=updated&direction=asc&since=
+    GET  /repos/{o}/{r}/issues?state=all&sort=updated&direction=desc&since=   (issues + PRs)
+    GET  /repos/{o}/{r}/issues/comments?sort=updated&direction=desc&since=
+    GET  /repos/{o}/{r}/pulls/comments?sort=updated&direction=desc&since=
     GET  /repos/{o}/{r}/pulls/{n}/reviews          (per active PR; no since filter exists)
     GET  /repos/{o}/{r}/releases                    (filtered client-side on published_at)
     POST /graphql  repository.discussions(orderBy: UPDATED_AT DESC)  (paged until older than since)
@@ -78,8 +78,20 @@ def run_gh(args: list) -> str:
 
 
 def gh_paginate(path: str) -> list:
-    """REST GET with --paginate --slurp (gh >= 2.48): one JSON array of pages, flattened."""
-    return [item for page in json.loads(run_gh(["api", "--paginate", "--slurp", path])) for item in page]
+    """REST GET with --paginate --slurp (gh >= 2.48): pages flattened, deduplicated by id.
+
+    Pages are offsets into a live list, so an item that changes mid-run moves. With
+    updated-desc order it moves to the front, onto a page already read, which pushes
+    the rest one place later: they repeat (deduplicated here) rather than get skipped.
+    The moved item itself was updated after cursor_out, so the next run picks it up."""
+    seen, items = set(), []
+    for page in json.loads(run_gh(["api", "--paginate", "--slurp", path])):
+        for item in page:
+            key = item.get("id", id(item))
+            if key not in seen:
+                seen.add(key)
+                items.append(item)
+    return items
 
 
 def fetch_releases(base: str, since: dt.datetime) -> list:
@@ -113,9 +125,9 @@ def fetch_discussions(owner: str, name: str, since: dt.datetime) -> list:
     found, after = [], None
     while True:
         args = ["gh", "api", "graphql", "-f", f"query={DISC_QUERY}",
-                "-F", f"owner={owner}", "-F", f"name={name}"]
+                "-f", f"owner={owner}", "-f", f"name={name}"]
         if after:
-            args += ["-F", f"after={after}"]
+            args += ["-f", f"after={after}"]
         data = json.loads(run_gh(args[1:]))
         repo = (data.get("data") or {}).get("repository")
         if repo is None:
@@ -171,7 +183,7 @@ def main() -> int:
     out = Path(a.out)
     (out / "raw").mkdir(parents=True, exist_ok=True)
     base = f"repos/{owner}/{name}"
-    q = f"sort=updated&direction=asc&per_page=100&since={iso(since)}"
+    q = f"sort=updated&direction=desc&per_page=100&since={iso(since)}"
 
     issues = [i for i in gh_paginate(f"{base}/issues?state=all&{q}") if ts(i["updated_at"]) > since]
     write(out / "raw/issues.json", json.dumps(issues, indent=1))
@@ -301,13 +313,39 @@ def main() -> int:
     blocks = [(i["number"], thread_text(i)) for i in signal] + \
              [(f"D{d['number']}", disc_text(d)) for d in discussions]
 
+    def split_block(num, text: str) -> list:
+        """Split a thread longer than a chunk at event boundaries (or, failing that,
+        lines), so no chunk greatly exceeds CHUNK_CHARS. Each part keeps the header."""
+        if len(text) <= CHUNK_CHARS:
+            return [(num, text)]
+        header = text.split("\n", 1)[0]
+        pieces = re.split(r"(?=\n\*\*\[)", text)  # each event starts "\n**[time]"
+        units = []
+        for piece in pieces:
+            while len(piece) > CHUNK_CHARS:  # one event longer than a chunk: cut by lines
+                cut = piece.rfind("\n", 0, CHUNK_CHARS)
+                cut = cut if cut > 0 else CHUNK_CHARS
+                units.append(piece[:cut])
+                piece = piece[cut:]
+            units.append(piece)
+        parts, cur = [], ""
+        for u in units:
+            if cur and len(cur) + len(u) > CHUNK_CHARS:
+                parts.append(cur)
+                cur = f"{header} (continued)\n"
+            cur += u
+        parts.append(cur)
+        return [(num, p) for p in parts]
+
+    blocks = [part for num, text in blocks for part in split_block(num, text)]
     chunks, cur, cur_nums = [], "", []
     for num, text in blocks:
         if cur and len(cur) + len(text) > CHUNK_CHARS:
             chunks.append((cur, cur_nums))
             cur, cur_nums = "", []
         cur += text
-        cur_nums.append(num)
+        if num not in cur_nums:
+            cur_nums.append(num)
     if cur:
         chunks.append((cur, cur_nums))
     for old in out.glob("chunk-*.md"):
