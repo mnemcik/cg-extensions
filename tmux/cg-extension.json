@@ -1,0 +1,11 @@
+{
+  "manifest": 1,
+  "name": "tmux",
+  "version": "0.2.0",
+  "description": "Starts the workspace's AI session inside its own tmux session when you run cg (or cg start), so sessions survive closing the terminal and tools can open panes next to them (cg 1.32+ launcher)",
+  "contributes": {
+    "launcher": [
+      { "binary": "cg-tmux", "args": ["launch"] }
+    ]
+  }
+}

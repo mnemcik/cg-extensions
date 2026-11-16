@@ -1,0 +1,18 @@
+{
+  "manifest": 1,
+  "name": "live-runs",
+  "version": "0.1.0",
+  "description": "Watch headless claude -p runs live: cg live run streams every agent step and the live output of every shell command to a log, cg live watch shows it (as a split next to the session inside tmux); the result JSON is the same as --output-format json",
+  "contributes": {
+    "claude-md-sections": [
+      { "id": "live-runs", "path": "fragments/live-runs.md" }
+    ],
+    "notes": [
+      { "src": "notes/live-runs.md", "dest": "notes/live-runs.md",
+        "index": "how cg live run / cg live watch work, the log files, and the gotchas of watching headless runs" }
+    ],
+    "subcommands": [
+      { "namespace": "live", "binary": "cg-live" }
+    ]
+  }
+}

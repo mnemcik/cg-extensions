@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# cg-tmux — the tmux extension's launcher. cg start runs it as
+#
+#   cg-tmux launch -- <agent> [agent args…]
+#
+# and it starts the agent inside a new tmux session on cg's own tmux server
+# (`tmux -L cg`, so the user's own tmux and ~/.tmux.conf are left alone), named
+# after the agent, the directory, the time and the process, in the current
+# directory, with the extension's tmux.conf when it starts that server. (tmux
+# gives a new session the PATH of the client that creates it, i.e. cg's; all
+# other variables come from the server's environment.) It runs the agent directly instead when already inside tmux,
+# when stdin or stdout isn't a terminal (tmux can't attach then), or without
+# tmux (with a warning), so cg start always starts the session.
+#
+# Env: CG_TMUX_SOCKET (default "cg"), CG_TMUX_BIN (tests), CG_TMUX_ASSUME_TTY=1 (tests).
+set -u
+
+usage() {
+  echo "usage: cg-tmux launch -- <agent> [args…]" >&2
+  exit 2
+}
+
+[ "${1:-}" = launch ] || usage
+shift
+[ "${1:-}" = -- ] || usage
+shift
+[ $# -ge 1 ] || usage
+
+if [ -n "${TMUX:-}" ]; then
+  exec "$@"
+fi
+if [ "${CG_TMUX_ASSUME_TTY:-}" != 1 ] && { [ ! -t 0 ] || [ ! -t 1 ]; }; then
+  exec "$@"
+fi
+
+tmux_bin=${CG_TMUX_BIN:-tmux}
+if ! command -v "$tmux_bin" >/dev/null 2>&1; then
+  echo "cg-tmux: tmux not found; starting $1 without it (install tmux, e.g. brew install tmux)" >&2
+  exec "$@"
+fi
+
+here=$(cd "$(dirname "$0")/.." && pwd)
+conf="$here/tmux.conf"
+socket=${CG_TMUX_SOCKET:-cg}
+
+# tmux session names may not contain '.' or ':'; the PID keeps two `cg` started
+# in the same second (or in directories sharing their first 30 characters) apart.
+clean() { printf '%s' "$1" | tr -c 'A-Za-z0-9_-' '-' | cut -c1-30; }
+name="$(clean "$(basename "$1")")-$(clean "$(basename "$PWD")")-$(date +%H%M%S)-$$"
+
+exec "$tmux_bin" -L "$socket" -f "$conf" new-session -s "$name" -c "$PWD" -- "$@"
