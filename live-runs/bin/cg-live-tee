@@ -12,7 +12,6 @@
 # single-quoted string in which a ' is written '"'"' (`eval 'echo '"'"'x'"'"''`).
 inv="$1"
 shell="${CLAUDE_CODE_SHELL:-${SHELL:-/bin/bash}}"
-umask 077
 
 # Only Bash tool calls (both markers) are logged; anything else runs as is.
 case "$inv" in
@@ -32,8 +31,10 @@ case "$arg" in
   "'"*"'")
     cmd="${arg#\'}"
     cmd="${cmd%\'}"
-    cmd="${cmd//"'\"'\"'"/$q}"   # '"'"' -> '
-    cmd="${cmd//"'\\''"/$q}"     # '\'' -> ' (older quoting)
+    case "$cmd" in
+      *"'\"'\"'"*) cmd="${cmd//"'\"'\"'"/$q}" ;;   # '"'"' -> ' (Claude Code 2.1)
+      *) cmd="${cmd//"'\\''"/$q}" ;;                # '\'' -> ' (older quoting only)
+    esac
     ;;
   *) cmd="$arg" ;;
 esac

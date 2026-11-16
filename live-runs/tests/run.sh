@@ -27,6 +27,8 @@ expect() {
 contains() { case "$2" in *"$3"*) ok ;; *) bad "$1: lacks '$3' in: $2" ;; esac; }
 lacks()    { case "$2" in *"$3"*) bad "$1: has '$3' in: $2" ;; *) ok ;; esac; }
 strip()    { sed 's/\x1b\[[0-9;]*m//g'; }
+# GNU stat first: BSD stat rejects -c, while GNU stat accepts -f (filesystem info) and would print junk.
+mode()     { stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1"; }
 
 # Fake claude: checks its flags, emits events, runs a tool call and a hook
 # through the prefix like Claude Code does, then exits 3.
@@ -43,6 +45,9 @@ printf '%s\n' "rc=$rc out=$out" > "$FAKE_TOOL"
 "$CLAUDE_CODE_SHELL_PREFIX" "true && eval 'printf \"a\\nb\\n\" | wc -l' < /dev/null && pwd -P >| /dev/null" >/dev/null
 # A hook containing "eval '" is not a Bash call: untouched, stderr kept separate.
 "$CLAUDE_CODE_SHELL_PREFIX" "echo hook-ran; echo \"eval 'x'\" >/dev/null; echo hook-err >&2" >> "$FAKE_TOOL" 2>"$FAKE_TOOL.hookerr"
+# Files the agent creates, directly and through a Bash call, keep the caller's umask.
+touch "$FAKE_TOOL.agentfile"
+"$CLAUDE_CODE_SHELL_PREFIX" "true && eval 'touch $FAKE_TOOL.toolfile' < /dev/null && pwd -P >| /dev/null" >/dev/null
 echo '{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1","is_error":true,"content":"Exit code 4\nit works\nerr"}]}}'
 echo '{"type":"assistant","message":{"content":[{"type":"text","text":"All done."}]}}'
 echo 'not json'
@@ -52,6 +57,7 @@ C
 chmod +x "$T/claude"
 export CG_LIVE_CLAUDE="$T/claude" CG_LIVE_DIR="$T/runs" FAKE_ARGS="$T/args" FAKE_TOOL="$T/tool" CG_LIVE_NO_WATCH=1
 export SHELL=/bin/bash CLAUDE_CODE_SHELL=/bin/bash
+umask 022
 
 # --- usage ---
 expect "no args" 2 "$LIVE"
@@ -108,9 +114,18 @@ lacks "events only" "$(printf '%s' "$out" | strip)" "│ it works"
 expect "watch cmds only" 0 "$LIVE" watch --cmds --once
 contains "cmds only" "$(printf '%s' "$out" | strip)" "exit 4"
 
+# --- the logs are private, but the agent's own files are not ---
+[ "$(mode "$T/tool.agentfile")" = 644 ] && ok || bad "agent's file mode $(mode "$T/tool.agentfile"), want 644 (umask leaked into claude)"
+[ "$(mode "$T/tool.toolfile")" = 644 ] && ok || bad "tool's file mode $(mode "$T/tool.toolfile"), want 644 (umask leaked into the Bash call)"
+
+# --- a command that literally contains '\'' is logged as written ---
+shq() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\"'\"'/g")"; }
+lit='printf "%s\n" '"'"'\'"'"''"'"
+: > "$T/lit.log"
+CG_LIVE_CMD_LOG="$T/lit.log" "$TEE" "true && eval $(shq "$lit") < /dev/null && pwd -P >| /dev/null" >/dev/null 2>&1
+contains "literal '\\'' kept" "$(strip < "$T/lit.log")" "\$ $lit"
+
 # --- private logs; no collision between runs in the same second ---
-# GNU stat first: BSD stat rejects -c, while GNU stat accepts -f (filesystem info) and would print junk.
-mode() { stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1"; }
 [ "$(mode "$T/runs")" = 700 ] && ok || bad "log dir mode $(mode "$T/runs"), want 700"
 [ "$(mode "$(readlink "$ev")")" = 600 ] && ok || bad "events file mode $(mode "$(readlink "$ev")"), want 600"
 [ "$(mode "$(readlink "$cl")")" = 600 ] && ok || bad "cmd log mode $(mode "$(readlink "$cl")"), want 600"
@@ -144,6 +159,12 @@ CG_LIVE_TMUX="$T/tmux" "$LIVE" watch --until-pane %5 "$(readlink "$ev")" >/dev/n
 sleep 1; kill -0 $wp 2>/dev/null && ok || bad "until-pane: viewer exited while the pane is alive"
 rm -f "$T/pane-alive"; sleep 4
 if kill -0 $wp 2>/dev/null; then bad "until-pane: viewer still running after the pane closed"; kill $wp; else ok; fi
+
+# --- --until-pane when tmux can't be reached: the viewer says so and stops ---
+printf '#!/bin/sh\nexit 1\n' > "$T/tmux-down"; chmod +x "$T/tmux-down"
+CG_LIVE_TMUX="$T/tmux-down" "$LIVE" watch --until-pane %5 "$(readlink "$ev")" >/dev/null 2>"$T/down.err" & dp=$!
+sleep 2; if kill -0 $dp 2>/dev/null; then bad "unreachable tmux: viewer still running"; kill $dp; else ok; fi
+contains "unreachable tmux message" "$(cat "$T/down.err")" "tmux is not reachable"
 
 # --- viewer hint outside tmux ---
 expect "hint" 3 env -u CG_LIVE_NO_WATCH -u TMUX "$LIVE" run hint -- x
