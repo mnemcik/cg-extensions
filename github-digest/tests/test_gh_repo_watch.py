@@ -297,9 +297,13 @@ class FakeRepo:
         m = re.search(r"/issues/(\d+)$", path)
         if m:
             n = int(m.group(1))
+            if n in self.t and self.t[n].get("error"):  # e.g. "Bad Gateway (HTTP 502)"
+                sys.exit(f"gh api {path} failed (exit 1):\ngh: {self.t[n]['error']}")
             if n not in self.t or self.t[n].get("missing"):
-                sys.exit(f"gh api {path} failed (exit 1):\nHTTP 404: Not Found")
+                sys.exit(f"gh api {path} failed (exit 1):\ngh: Not Found (HTTP 404)")
             return json.dumps(self.issue(n))
+        if re.fullmatch(r"repos/[^/]+/[^/]+", path):  # the repository itself (canonical url)
+            return json.dumps({"url": "https://api.github.com/repos/o/r"})
         return json.dumps([])
 
 
@@ -375,7 +379,7 @@ class ThreadsOutsideTheList(unittest.TestCase):
     def test_unreadable_orphan_is_recorded_and_the_run_continues(self):
         t = self.filler()
         m, _ = run_repo(FakeRepo(t, [(9002, 99, self.W + 300, "comment on a deleted thread")]), self.W)
-        self.assertEqual(m["found_outside_list"]["orphan_fetch_failed"], [99])
+        self.assertEqual(m["found_outside_list"]["orphan_fetch_failed"], {"99": "HTTP 404"})
         self.assertEqual(m["orphaned_events"], {"99": 1})
 
     def test_failed_closed_pr_read_is_recorded(self):
@@ -383,14 +387,15 @@ class ThreadsOutsideTheList(unittest.TestCase):
         t[51] = {"updated": self.W + 500, "key": self.W - 40 * DAY, "state": "closed",
                  "closed": self.W - 40 * DAY, "pr": True, "missing": True}
         m, _ = run_repo(FakeRepo(t), self.W)
-        self.assertEqual(m["found_outside_list"]["closed_pr_fetch_failed"], [51])
+        self.assertEqual(m["found_outside_list"]["closed_pr_fetch_failed"], {"51": "HTTP 404"})
 
     def test_orphan_read_redirected_to_another_repo_is_a_failure(self):
         t = self.filler()
         t[81] = {"updated": self.W + 300, "key": self.W - 30 * DAY, "state": "closed",
                  "closed": self.W - 30 * DAY, "transferred_to": 5}
         m, text = run_repo(FakeRepo(t, [(9003, 81, self.W + 300, "comment on 81")]), self.W)
-        self.assertEqual(m["found_outside_list"]["orphan_fetch_failed"], [81])
+        self.assertEqual(m["found_outside_list"]["orphan_fetch_failed"],
+                         {"81": "transferred to https://api.github.com/repos/other/repo#5"})
         self.assertEqual(m["orphaned_events"], {"81": 1})
 
     def test_repo_given_in_another_case_still_reads_threads(self):
@@ -401,7 +406,7 @@ class ThreadsOutsideTheList(unittest.TestCase):
         repo = FakeRepo(t, [(9004, 80, self.W + 300, "comment on 80")])
         m, text = run_repo(repo, self.W, repo_arg="O/R")
         self.assertIn("comment on 80", text)
-        self.assertEqual(m["found_outside_list"]["orphan_fetch_failed"], [])
+        self.assertEqual(m["found_outside_list"]["orphan_fetch_failed"], {})
 
     def test_renamed_repo_still_reads_threads(self):
         # Given by its old name, which redirects: the API answers as the new one.
@@ -411,7 +416,33 @@ class ThreadsOutsideTheList(unittest.TestCase):
         m, text = run_repo(FakeRepo(t, [(9005, 80, self.W + 300, "comment on 80")]), self.W,
                            repo_arg="old-owner/old-name")
         self.assertIn("comment on 80", text)
-        self.assertEqual(m["found_outside_list"]["orphan_fetch_failed"], [])
+        self.assertEqual(m["found_outside_list"]["orphan_fetch_failed"], {})
+
+    def test_transient_error_on_a_closed_pr_read_ends_the_run(self):
+        # A rate limit or server error is not "gone": the run must stop rather than
+        # advance the cursor past a thread it couldn't read.
+        t = self.filler()
+        t[52] = {"updated": self.W + 500, "key": self.W - 40 * DAY, "state": "closed",
+                 "closed": self.W - 40 * DAY, "pr": True, "error": "Bad Gateway (HTTP 502)"}
+        with self.assertRaises(SystemExit) as cm:
+            run_repo(FakeRepo(t), self.W)
+        self.assertIn("HTTP 502", str(cm.exception.code))
+
+    def test_transient_error_on_an_orphan_read_ends_the_run(self):
+        t = self.filler()
+        t[82] = {"updated": self.W + 300, "key": self.W - 30 * DAY, "state": "closed",
+                 "closed": self.W - 30 * DAY, "error": "API rate limit exceeded (HTTP 403)"}
+        with self.assertRaises(SystemExit):
+            run_repo(FakeRepo(t, [(9006, 82, self.W + 300, "comment on 82")]), self.W)
+
+    def test_renamed_repo_with_nothing_listed_still_reads_threads(self):
+        # No thread listed in the window, lookback or open sweep: the canonical name
+        # comes from one read of the repository itself.
+        t = {53: {"updated": self.W + 500, "key": self.W - 40 * DAY, "state": "closed",
+                  "closed": self.W - 40 * DAY, "pr": True}}
+        m, _ = run_repo(FakeRepo(t), self.W, repo_arg="old-owner/old-name")
+        self.assertEqual(m["found_outside_list"]["closed_pr_sweep"], [53])
+        self.assertEqual(m["found_outside_list"]["closed_pr_fetch_failed"], {})
 
     def test_lookback_zero_disables_it(self):
         t = self.filler()

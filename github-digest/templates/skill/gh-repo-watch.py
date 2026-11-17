@@ -100,13 +100,21 @@ def gh_page(path: str) -> list:
     return json.loads(run_gh(["api", path]))
 
 
+GONE = re.compile(r"\(HTTP (404|410)\)")  # gh's stderr: "gh: Not Found (HTTP 404)"
+
+
 def gh_get_optional(path: str):
-    """One REST GET that may fail (a deleted, transferred or hidden thread): returns the
-    object, or None, instead of ending the run."""
+    """One REST GET of something that may be gone: returns (object, None), or
+    (None, "HTTP 404"/"HTTP 410") when it was deleted or hidden. Any other failure (rate
+    limit, server or auth error) ends the run like a failed list read, so the cursor
+    can't move past a thread that was only unreadable for the moment."""
     try:
-        return json.loads(run_gh(["api", path]))
-    except SystemExit:
-        return None
+        return json.loads(run_gh(["api", path])), None
+    except SystemExit as e:
+        m = GONE.search(str(e.code))
+        if m:
+            return None, f"HTTP {m.group(1)}"
+        raise
 
 
 STATS = {"keyset_requests": 0, "offset_fallbacks": 0, "stalled_seconds": [], "unverified_seconds": []}
@@ -334,22 +342,33 @@ def main() -> int:
     # in the pulls list sorted by updated.
     issues = [i for i in gh_since_keyset(f"{base}/issues?state=all", since) if ts(i["updated_at"]) > since]
     by_num = {i["number"]: i for i in issues}
+    # Sources add thread numbers; the two *_fetch_failed maps record, per number, why a
+    # thread couldn't be read (HTTP 404/410, or transferred to another repository).
     found = {"lookback": [], "open_sweep": [], "closed_pr_sweep": [], "orphans": [],
-             "closed_pr_fetch_failed": [], "orphan_fetch_failed": []}
+             "closed_pr_fetch_failed": {}, "orphan_fetch_failed": {}}
+    canon_url = []  # this repository's canonical API URL, looked up once if needed
+
+    def canonical() -> str:
+        # The API answers in the canonical name and case whatever the repo was given as
+        # (a different case, or an old name that redirects after a rename): take it from
+        # a listed thread, or else from one read of the repository itself.
+        listed = next((x["repository_url"] for x in issues if x.get("repository_url")), None)
+        if listed:
+            return listed
+        if not canon_url:
+            canon_url.append(json.loads(run_gh(["api", base]))["url"])
+        return canon_url[0]
 
     def read_thread(n: int):
-        """The thread by number, or None when the read fails or returns another thread
-        (a transfer redirect to another repository)."""
-        i = gh_get_optional(f"{base}/issues/{n}")
-        # Compare with the repository the list reads returned: the API answers in the
-        # canonical name and case whatever the repo was given as (a different case, or
-        # an old name that redirects after a rename). Without any listed thread, fall
-        # back to the given name, case-insensitively.
-        canon = next((x["repository_url"] for x in issues if x.get("repository_url")),
-                     f"https://api.github.com/repos/{owner}/{name}")
-        return i if i and i.get("number") == n and (
-            i.get("repository_url", "").lower() == canon.lower()
-            or "repository_url" not in i) else None
+        """(thread, None), or (None, why) when it is gone (HTTP 404/410) or the read
+        returned another repository's thread (a transfer redirect)."""
+        i, why = gh_get_optional(f"{base}/issues/{n}")
+        if i is None:
+            return None, why
+        url = i.get("repository_url")
+        if i.get("number") != n or (url and url.lower() != canonical().lower()):
+            return None, f"transferred to {url or '?'}#{i.get('number')}"
+        return i, None
 
     def add(i: dict, source: str) -> None:
         if i["number"] not in by_num and ts(i["updated_at"]) > since:
@@ -372,11 +391,11 @@ def main() -> int:
         page = gh_page(f"{base}/pulls?state=closed&sort=updated&direction=desc&per_page={PAGE}&page={n}")
         for p in page:
             if p["number"] not in by_num and ts(p["updated_at"]) > since:
-                i = read_thread(p["number"])  # issue form, as the rest
+                i, why = read_thread(p["number"])  # issue form, as the rest
                 if i:
                     add(i, "closed_pr_sweep")
                 else:
-                    found["closed_pr_fetch_failed"].append(p["number"])
+                    found["closed_pr_fetch_failed"][p["number"]] = why
         if len(page) < PAGE or all(ts(p["updated_at"]) < list_since for p in page):
             break
         n += 1
@@ -431,13 +450,13 @@ def main() -> int:
     # 4. Orphans: a comment whose thread isn't in the set. Fetch the thread, so its
     #    comments are narrated rather than only counted; a failed read is recorded.
     for n in sorted(set(events) - set(by_num)):
-        i = read_thread(n)
+        i, why = read_thread(n)
         if i:
             by_num[n] = i
             issues.append(i)
             found["orphans"].append(n)
         else:
-            found["orphan_fetch_failed"].append(n)
+            found["orphan_fetch_failed"][n] = why
 
     # Reviews have no `since` filter, so they cost one call per PR. Fetch them for PRs a
     # human is involved in (human author or human comment) and for bot PRs merged or
@@ -590,7 +609,8 @@ def main() -> int:
          f"{sum(map(len, reviews.values()))} reviews (bot comments are counted here, not narrated)",
          f"- Signal threads (in chunks): {len(signal)} · rolled-up threads: {len(mechanical)}",
          "- Threads the issue list left out, found by: " + (", ".join(
-             f"{k.replace('_', ' ')} {len(v)} (#" + ", #".join(map(str, v)) + ")"
+             f"{k.replace('_', ' ')} {len(v)} (" + ", ".join(
+                 f"#{n}: {v[n]}" if isinstance(v, dict) else f"#{n}" for n in v) + ")"
              for k, v in found.items() if v) or "none"),
          f"- Orphaned comment events (thread not readable even by number): {sum(orphans.values())}\n",
          "## Releases\n"]
