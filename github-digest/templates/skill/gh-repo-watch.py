@@ -306,6 +306,10 @@ def main() -> int:
         since = parse_since(a.since)
     except (ValueError, OverflowError, OSError):
         ap.error(f"--since must be an ISO time, a Unix epoch or Nd, got {a.since!r}")
+    # Whole seconds, like every stamp the API returns: a fractional `since` (from `Nd`,
+    # or an ISO time with a fraction) would put a stalled second recorded at the
+    # window's start below `since`, where it would be filed as pre-cursor.
+    since = since.replace(microsecond=0)
     lb = re.fullmatch(r"(\d{1,4})d", a.lookback)
     if not lb:
         ap.error(f"--lookback must be Nd (0-9999 days), got {a.lookback!r}")
@@ -330,7 +334,16 @@ def main() -> int:
     # in the pulls list sorted by updated.
     issues = [i for i in gh_since_keyset(f"{base}/issues?state=all", since) if ts(i["updated_at"]) > since]
     by_num = {i["number"]: i for i in issues}
-    found = {"lookback": [], "open_sweep": [], "closed_pr_sweep": [], "orphans": [], "orphan_fetch_failed": []}
+    found = {"lookback": [], "open_sweep": [], "closed_pr_sweep": [], "orphans": [],
+             "closed_pr_fetch_failed": [], "orphan_fetch_failed": []}
+
+    def read_thread(n: int):
+        """The thread by number, or None when the read fails or returns another thread
+        (a transfer redirect to another repository)."""
+        i = gh_get_optional(f"{base}/issues/{n}")
+        return i if i and i.get("number") == n and (
+            i.get("repository_url", "").endswith(f"/repos/{owner}/{name}")
+            or "repository_url" not in i) else None
 
     def add(i: dict, source: str) -> None:
         if i["number"] not in by_num and ts(i["updated_at"]) > since:
@@ -353,9 +366,11 @@ def main() -> int:
         page = gh_page(f"{base}/pulls?state=closed&sort=updated&direction=desc&per_page={PAGE}&page={n}")
         for p in page:
             if p["number"] not in by_num and ts(p["updated_at"]) > since:
-                i = gh_get_optional(f"{base}/issues/{p['number']}")  # issue form, as the rest
+                i = read_thread(p["number"])  # issue form, as the rest
                 if i:
                     add(i, "closed_pr_sweep")
+                else:
+                    found["closed_pr_fetch_failed"].append(p["number"])
         if len(page) < PAGE or all(ts(p["updated_at"]) < list_since for p in page):
             break
         n += 1
@@ -410,7 +425,7 @@ def main() -> int:
     # 4. Orphans: a comment whose thread isn't in the set. Fetch the thread, so its
     #    comments are narrated rather than only counted; a failed read is recorded.
     for n in sorted(set(events) - set(by_num)):
-        i = gh_get_optional(f"{base}/issues/{n}")
+        i = read_thread(n)
         if i:
             by_num[n] = i
             issues.append(i)

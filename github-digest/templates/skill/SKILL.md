@@ -38,7 +38,7 @@ If the user names a repo that has no target, offer to create one (see *Adding a 
    - `chunk-NN.md`: per-thread text, about 60k characters each. Each thread holds the opening post when the thread is new, then every human comment, review and review-line comment in the window, oldest first, quoted with `> `. Bot comments are collapsed to one count line.
    - `raw/*.json`: the unmodified API results
    - `manifest.json`: `cursor_in`, `cursor_out`, the thread numbers in each chunk, `review_calls`, `keyset_requests`, `offset_fallbacks`, `stalled_seconds`, `unverified_seconds`, `pre_cursor_unverified_seconds`, `lookback_days`, `found_outside_list` and `orphaned_events`:
-     - `found_outside_list`: threads the issue list left out, by the source that found them (`lookback`, `open_sweep`, `closed_pr_sweep`, `orphans`), plus `orphan_fetch_failed` (threads behind a comment that couldn't be read by number: deleted, transferred or hidden). **Name them in Data Caveats** as a count per source plus the numbers.
+     - `found_outside_list`: threads the issue list left out, by the source that found them (`lookback`, `open_sweep`, `closed_pr_sweep`, `orphans`), plus `closed_pr_fetch_failed` and `orphan_fetch_failed` (threads that couldn't be read by number: deleted, transferred or hidden, but also a rate limit, an auth or server error). A failed thread is missing from the digest; say so, and rerun if the cause was transient. **Name them in Data Caveats** as a count per source plus the numbers.
      - `orphaned_events`: comments whose thread couldn't be read even by number. Name them in Data Caveats.
      - `unverified_seconds` and `pre_cursor_unverified_seconds`: see *How the fetcher selects*.
 
@@ -77,7 +77,7 @@ If the user names a repo that has no target, offer to create one (see *Adding a 
 
   Everything else is listed in `summary.md` and not narrated. That covers stale marks, CI and dependabot, and human threads whose only activity was a label or state change. A user counts as a bot when its account type is `Bot`, or its login has a `[bot]` suffix or is exactly dependabot, renovate, github-actions or codecov.
 - **Caps.** Opening posts are capped at 3,000 characters and each comment or review at 2,000, with HTML comments stripped. A thread longer than one chunk is split at comment boundaries, and each continuation repeats the thread header with `(continued)`. Follow the thread URL when a truncated body matters.
-- **Cost.** The lookback and sweeps add list reads: on `gastownhall/gascity` about 15 for the lookback, 18 for the open sweep and 8 for the closed-PR sweep per run, plus one read per thread they or orphans add. Otherwise mostly one serial review call per PR a human is involved in, recorded as `review_calls`. Open bot PRs with no human comment are skipped. A window with about 1,000 human PRs takes several minutes and roughly a fifth of the 5,000 per hour REST budget, so narrow very large windows.
+- **Cost.** The lookback and sweeps add list reads: on `gastownhall/gascity` about 15 for the lookback, 18 for the open sweep and 8 for the closed-PR sweep per run, plus one read per thread the closed-PR sweep or the orphans add (the lookback and the open sweep return whole threads). Otherwise mostly one serial review call per PR a human is involved in, recorded as `review_calls`. Open bot PRs with no human comment are skipped. A window with about 1,000 human PRs takes several minutes and roughly a fifth of the 5,000 per hour REST budget, so narrow very large windows.
 
 ## Not covered
 

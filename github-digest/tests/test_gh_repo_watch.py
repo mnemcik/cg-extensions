@@ -257,6 +257,9 @@ class FakeRepo:
              "html_url": f"https://github.com/o/r/issues/{n}"}
         if t.get("pr"):
             i["pull_request"] = {"merged_at": None}
+        if t.get("transferred_to"):  # what a followed transfer redirect returns
+            i["number"] = t["transferred_to"]
+            i["repository_url"] = "https://api.github.com/repos/other/repo"
         return i
 
     def __call__(self, args):
@@ -299,7 +302,7 @@ class FakeRepo:
         return json.dumps([])
 
 
-def run_repo(repo, since_sec=0, extra=(), preload_unverified=()):
+def run_repo(repo, since_sec=0, extra=(), preload_unverified=(), since_str=None):
     """main() against a FakeRepo with the window starting at T0 + since_sec; returns the
     manifest and the output folder's text."""
     import contextlib, io, tempfile
@@ -309,7 +312,7 @@ def run_repo(repo, since_sec=0, extra=(), preload_unverified=()):
     with tempfile.TemporaryDirectory() as d:
         try:
             w.run_gh, w.PAGE = repo, 5
-            sys.argv = ["gh-repo-watch.py", "o/r", "--since", at(since_sec), "--out", d, *extra]
+            sys.argv = ["gh-repo-watch.py", "o/r", "--since", since_str or at(since_sec), "--out", d, *extra]
             with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
                 w.main()
         finally:
@@ -374,6 +377,21 @@ class ThreadsOutsideTheList(unittest.TestCase):
         self.assertEqual(m["found_outside_list"]["orphan_fetch_failed"], [99])
         self.assertEqual(m["orphaned_events"], {"99": 1})
 
+    def test_failed_closed_pr_read_is_recorded(self):
+        t = self.filler()
+        t[51] = {"updated": self.W + 500, "key": self.W - 40 * DAY, "state": "closed",
+                 "closed": self.W - 40 * DAY, "pr": True, "missing": True}
+        m, _ = run_repo(FakeRepo(t), self.W)
+        self.assertEqual(m["found_outside_list"]["closed_pr_fetch_failed"], [51])
+
+    def test_orphan_read_redirected_to_another_repo_is_a_failure(self):
+        t = self.filler()
+        t[81] = {"updated": self.W + 300, "key": self.W - 30 * DAY, "state": "closed",
+                 "closed": self.W - 30 * DAY, "transferred_to": 5}
+        m, text = run_repo(FakeRepo(t, [(9003, 81, self.W + 300, "comment on 81")]), self.W)
+        self.assertEqual(m["found_outside_list"]["orphan_fetch_failed"], [81])
+        self.assertEqual(m["orphaned_events"], {"81": 1})
+
     def test_lookback_zero_disables_it(self):
         t = self.filler()
         t[70] = {"updated": self.W + 900, "key": self.W - 5 * DAY, "state": "closed",
@@ -396,6 +414,15 @@ class CursorHold(unittest.TestCase):
         self.assertGreater(w.ts(m["cursor_out"]), w.ts(m["cursor_in"]) + dt.timedelta(days=1))
         self.assertEqual(m["unverified_seconds"], [])
         self.assertEqual(m["pre_cursor_unverified_seconds"], [pre])
+
+    def test_fractional_since_still_holds_its_first_second(self):
+        # `Nd` gives a since with microseconds; a stall recorded at the window's first
+        # whole second must hold the cursor, not be filed as pre-cursor.
+        first = at(self.W)
+        m, _ = run_repo(FakeRepo({1: {"updated": self.W + 10}}), self.W, preload_unverified=[first],
+                        since_str=at(self.W).replace("Z", ".500000Z"))
+        self.assertEqual(m["unverified_seconds"], [first])
+        self.assertEqual(m["pre_cursor_unverified_seconds"], [])
 
     def test_in_window_second_still_holds(self):
         inside = at(self.W + 50)
