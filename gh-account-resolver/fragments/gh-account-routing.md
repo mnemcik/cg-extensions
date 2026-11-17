@@ -9,9 +9,9 @@ On each call the wrapper finds the repo owner from the call's own arguments: `-R
 **Configuration:** create `.claude/gh-account-map` with one `owner = account` per line. The `default` key names the globally active account, which needs no routing. Example:
 
 ```
-default = mnemcik
-idellabv     = mnemcik-work
-Visma-Idella = mnemcik-work
+default = me
+acme-corp    = me-work
+acme-labs    = me-work
 ```
 
 Owner match is case-insensitive; `#` starts a comment. To route a new org to a different account, add one line; no code change. The map is workspace-local user config (not shipped by this extension).
