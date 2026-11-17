@@ -69,6 +69,10 @@ See the Consigliere
 [extension authoring guide](https://github.com/mnemcik/consigliere/blob/main/EXTENSIONS.md)
 for the manifest reference and contribution points.
 
+## Issues
+
+Open issues in this repository and in [consigliere](https://github.com/mnemcik/consigliere) form one backlog. Type, priority, order and triage follow consigliere's [Issues and priority](https://github.com/mnemcik/consigliere/blob/main/CONTRIBUTING.md#issues-and-priority). Problems with the extension registry are filed here.
+
 ## How a PR gets to merge
 
 Extensions run on users' machines, so every PR gets an **impact review** by the maintainer before it can merge, whoever opened it. PRs opened by Dependabot or Renovate are exempt. The review checks:
