@@ -257,6 +257,7 @@ class FakeRepo:
              "html_url": f"https://github.com/o/r/issues/{n}"}
         if t.get("pr"):
             i["pull_request"] = {"merged_at": None}
+        i["repository_url"] = "https://api.github.com/repos/o/r"
         if t.get("transferred_to"):  # what a followed transfer redirect returns
             i["number"] = t["transferred_to"]
             i["repository_url"] = "https://api.github.com/repos/other/repo"
@@ -302,7 +303,7 @@ class FakeRepo:
         return json.dumps([])
 
 
-def run_repo(repo, since_sec=0, extra=(), preload_unverified=(), since_str=None):
+def run_repo(repo, since_sec=0, extra=(), preload_unverified=(), since_str=None, repo_arg="o/r"):
     """main() against a FakeRepo with the window starting at T0 + since_sec; returns the
     manifest and the output folder's text."""
     import contextlib, io, tempfile
@@ -312,7 +313,7 @@ def run_repo(repo, since_sec=0, extra=(), preload_unverified=(), since_str=None)
     with tempfile.TemporaryDirectory() as d:
         try:
             w.run_gh, w.PAGE = repo, 5
-            sys.argv = ["gh-repo-watch.py", "o/r", "--since", since_str or at(since_sec), "--out", d, *extra]
+            sys.argv = ["gh-repo-watch.py", repo_arg, "--since", since_str or at(since_sec), "--out", d, *extra]
             with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
                 w.main()
         finally:
@@ -391,6 +392,26 @@ class ThreadsOutsideTheList(unittest.TestCase):
         m, text = run_repo(FakeRepo(t, [(9003, 81, self.W + 300, "comment on 81")]), self.W)
         self.assertEqual(m["found_outside_list"]["orphan_fetch_failed"], [81])
         self.assertEqual(m["orphaned_events"], {"81": 1})
+
+    def test_repo_given_in_another_case_still_reads_threads(self):
+        # The API answers with the canonical case ("o/r") whatever case was asked for.
+        t = self.filler()
+        t[80] = {"updated": self.W + 300, "key": self.W - 30 * DAY, "state": "closed",
+                 "closed": self.W - 30 * DAY}
+        repo = FakeRepo(t, [(9004, 80, self.W + 300, "comment on 80")])
+        m, text = run_repo(repo, self.W, repo_arg="O/R")
+        self.assertIn("comment on 80", text)
+        self.assertEqual(m["found_outside_list"]["orphan_fetch_failed"], [])
+
+    def test_renamed_repo_still_reads_threads(self):
+        # Given by its old name, which redirects: the API answers as the new one.
+        t = self.filler()
+        t[80] = {"updated": self.W + 300, "key": self.W - 30 * DAY, "state": "closed",
+                 "closed": self.W - 30 * DAY}
+        m, text = run_repo(FakeRepo(t, [(9005, 80, self.W + 300, "comment on 80")]), self.W,
+                           repo_arg="old-owner/old-name")
+        self.assertIn("comment on 80", text)
+        self.assertEqual(m["found_outside_list"]["orphan_fetch_failed"], [])
 
     def test_lookback_zero_disables_it(self):
         t = self.filler()

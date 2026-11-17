@@ -341,8 +341,14 @@ def main() -> int:
         """The thread by number, or None when the read fails or returns another thread
         (a transfer redirect to another repository)."""
         i = gh_get_optional(f"{base}/issues/{n}")
+        # Compare with the repository the list reads returned: the API answers in the
+        # canonical name and case whatever the repo was given as (a different case, or
+        # an old name that redirects after a rename). Without any listed thread, fall
+        # back to the given name, case-insensitively.
+        canon = next((x["repository_url"] for x in issues if x.get("repository_url")),
+                     f"https://api.github.com/repos/{owner}/{name}")
         return i if i and i.get("number") == n and (
-            i.get("repository_url", "").endswith(f"/repos/{owner}/{name}")
+            i.get("repository_url", "").lower() == canon.lower()
             or "repository_url" not in i) else None
 
     def add(i: dict, source: str) -> None:
