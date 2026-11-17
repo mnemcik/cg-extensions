@@ -1,7 +1,7 @@
 {
   "manifest": 1,
   "name": "gh-account-resolver",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Per-call gh account routing: a gh wrapper on PATH, installed per Claude session, picks the logged-in gh account each call needs so parallel sessions don't fight over global gh auth state",
   "contributes": {
     "claude-md-sections": [

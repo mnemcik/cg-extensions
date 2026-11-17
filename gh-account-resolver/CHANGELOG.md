@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.1
+
+- **Changed:** the example account map in the README and the CLAUDE.md fragment uses neutral names. Documentation only; routing is unchanged.
+
 ## 0.2.0
 
 - **Changed:** routing now happens per `gh` call, at call time, instead of by rewriting the command text before it runs ([#6](https://github.com/mnemcik/cg-extensions/issues/6)). The hook moves from `PreToolUse` to `SessionStart`. At session start it puts a `gh` wrapper first on `PATH` through the session's `CLAUDE_ENV_FILE`; the wrapper works out the owner from each call's arguments and runs the real `gh` with that account's token. Fixes:

@@ -68,9 +68,9 @@ Restart running Claude sessions afterwards; the hook runs at session start.
 Create `.claude/gh-account-map` (workspace-local user config; not shipped by this extension):
 
 ```
-default = mnemcik
-idellabv     = mnemcik-work
-Visma-Idella = mnemcik-work
+default = me
+acme-corp    = me-work
+acme-labs    = me-work
 ```
 
 One `owner = account` per line. `default` names the globally active account, which needs no routing. Owner match is case-insensitive; `#` starts a comment; CRLF line endings are fine. Add a line to route a new org; no code change.
