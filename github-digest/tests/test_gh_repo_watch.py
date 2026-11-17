@@ -4,6 +4,8 @@ import datetime as dt
 import importlib.util
 import json
 import pathlib
+import re
+import sys
 import unittest
 
 SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "templates/skill/gh-repo-watch.py"
@@ -209,10 +211,10 @@ class EndToEnd(unittest.TestCase):
                 return json.dumps({"data": {"repository": {"discussions": {
                     "pageInfo": {"hasNextPage": False, "endCursor": None}, "nodes": []}}}})
             url = args[-1]
-            if "/issues?" in url:
-                return json.dumps([issue])
             if "--slurp" in args:
                 return json.dumps([[]])
+            if "/issues?" in url:
+                return json.dumps([issue])
             return json.dumps([])
 
         old_run, old_argv = w.run_gh, sys.argv
@@ -235,6 +237,173 @@ class EndToEnd(unittest.TestCase):
             self.assertEqual(m["chunks"][0]["threads"], [7])
 
 
+class FakeRepo:
+    """A fake GitHub repo whose list indexes lag, served through run_gh. Each thread:
+    number -> dict(updated=reported second, key=its position in the issue list (default
+    updated), pull_key=its position in the closed-PR list (default updated), created,
+    state, closed (second or None), pr, missing (single read fails)). Comments:
+    list of (id, thread, second, body)."""
+
+    def __init__(self, threads, comments=()):
+        self.t = threads
+        self.c = list(comments)
+
+    def issue(self, n):
+        t = self.t[n]
+        i = {"id": 1000 + n, "number": n, "title": f"thread {n}", "state": t.get("state", "open"),
+             "user": {"login": "human", "type": "User"}, "labels": [], "body": f"body {n}",
+             "created_at": at(t.get("created", -100000)), "updated_at": at(t["updated"]),
+             "closed_at": at(t["closed"]) if t.get("closed") is not None else None,
+             "html_url": f"https://github.com/o/r/issues/{n}"}
+        if t.get("pr"):
+            i["pull_request"] = {"merged_at": None}
+        return i
+
+    def __call__(self, args):
+        if args[:2] == ["api", "graphql"]:
+            return json.dumps({"data": {"repository": {"discussions": {
+                "pageInfo": {"hasNextPage": False, "endCursor": None}, "nodes": []}}}})
+        url = args[-1]
+        path, _, qs = url.partition("?")
+        q = dict(kv.split("=", 1) for kv in qs.split("&") if "=" in kv)
+        if "--slurp" in args:
+            if path.endswith("/issues") and q.get("state") == "open":
+                return json.dumps([[self.issue(n) for n, t in self.t.items() if t.get("state", "open") == "open"]])
+            return json.dumps([[]])
+        per, page = int(q.get("per_page", 30)), int(q.get("page", 1))
+        if path.endswith("/issues/comments") or path.endswith("/pulls/comments"):
+            since = w.ts(q["since"])
+            key = "issue_url" if path.endswith("/issues/comments") else "pull_request_url"
+            rows = sorted((sec, cid, n, body) for cid, n, sec, body in self.c
+                          if (key == "issue_url") and T0 + dt.timedelta(seconds=sec) >= since)
+            rows = rows[(page - 1) * per: page * per]
+            return json.dumps([{"id": cid, key: f"https://api.github.com/repos/o/r/issues/{n}",
+                                "user": {"login": "human", "type": "User"}, "body": body,
+                                "created_at": at(sec), "updated_at": at(sec)} for sec, cid, n, body in rows])
+        if path.endswith("/issues"):
+            since = w.ts(q["since"])
+            rows = sorted((t.get("key", t["updated"]), n) for n, t in self.t.items()
+                          if T0 + dt.timedelta(seconds=t.get("key", t["updated"])) >= since)
+            return json.dumps([self.issue(n) for _, n in rows[(page - 1) * per: page * per]])
+        if path.endswith("/pulls"):
+            rows = sorted(((t.get("pull_key", t["updated"]), n) for n, t in self.t.items()
+                           if t.get("pr") and t.get("state") == "closed"), reverse=True)
+            return json.dumps([{"number": n, "updated_at": at(self.t[n]["updated"])}
+                               for _, n in rows[(page - 1) * per: page * per]])
+        m = re.search(r"/issues/(\d+)$", path)
+        if m:
+            n = int(m.group(1))
+            if n not in self.t or self.t[n].get("missing"):
+                sys.exit(f"gh api {path} failed (exit 1):\nHTTP 404: Not Found")
+            return json.dumps(self.issue(n))
+        return json.dumps([])
+
+
+def run_repo(repo, since_sec=0, extra=(), preload_unverified=()):
+    """main() against a FakeRepo with the window starting at T0 + since_sec; returns the
+    manifest and the output folder's text."""
+    import contextlib, io, tempfile
+    old_run, old_argv, old_page = w.run_gh, sys.argv, w.PAGE
+    w.STATS.update(keyset_requests=0, offset_fallbacks=0, stalled_seconds=[],
+                   unverified_seconds=list(preload_unverified))
+    with tempfile.TemporaryDirectory() as d:
+        try:
+            w.run_gh, w.PAGE = repo, 5
+            sys.argv = ["gh-repo-watch.py", "o/r", "--since", at(since_sec), "--out", d, *extra]
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                w.main()
+        finally:
+            w.run_gh, sys.argv, w.PAGE = old_run, old_argv, old_page
+        out = pathlib.Path(d)
+        text = "\n".join(f.read_text(encoding="utf-8") for f in sorted(out.glob("*.md")))
+        return json.loads((out / "manifest.json").read_text(encoding="utf-8")), text
+
+
+DAY = 86400
+
+
+class ThreadsOutsideTheList(unittest.TestCase):
+    """GitHub's issue list sorts and filters on an index that can lag a thread's real
+    updated_at. Each case is a thread updated in the window that the list leaves out;
+    48b3fe2 misses every one of them."""
+
+    W = 5 * DAY  # window start (in the past: cursor_out is now)
+
+    def filler(self):
+        # enough ordinary threads that every list spans several pages (PAGE = 5)
+        return {n: {"updated": self.W + 1000 * n, "state": "open"} for n in range(1, 13)}
+
+    def test_closed_pr_with_an_invisible_change_long_after_close(self):
+        t = self.filler()
+        # closed 40 days before the window; listed at its close time in the issue list,
+        # at its real update in the closed-PR list
+        t[50] = {"updated": self.W + 500, "key": self.W - 40 * DAY, "state": "closed",
+                 "closed": self.W - 40 * DAY, "pr": True}
+        m, text = run_repo(FakeRepo(t), self.W)
+        self.assertIn("thread 50", text)
+        self.assertEqual(m["found_outside_list"]["closed_pr_sweep"], [50])
+        self.assertEqual(m["threads"], 13)
+
+    def test_open_thread_lagging_beyond_the_lookback(self):
+        t = self.filler()
+        t[60] = {"updated": self.W + 700, "key": self.W - 60 * DAY, "state": "open"}
+        m, text = run_repo(FakeRepo(t), self.W)
+        self.assertIn("thread 60", text)
+        self.assertEqual(m["found_outside_list"]["open_sweep"], [60])
+
+    def test_closed_issue_inside_the_lookback(self):
+        t = self.filler()
+        t[70] = {"updated": self.W + 900, "key": self.W - 5 * DAY, "state": "closed",
+                 "closed": self.W - 5 * DAY}
+        m, text = run_repo(FakeRepo(t), self.W)
+        self.assertIn("thread 70", text)
+        self.assertEqual(m["found_outside_list"]["lookback"], [70])
+
+    def test_orphan_thread_is_fetched_and_narrated(self):
+        t = self.filler()
+        t[80] = {"updated": self.W + 300, "key": self.W - 30 * DAY, "state": "closed",
+                 "closed": self.W - 30 * DAY}
+        m, text = run_repo(FakeRepo(t, [(9001, 80, self.W + 300, "late comment on 80")]), self.W)
+        self.assertIn("late comment on 80", text)
+        self.assertEqual(m["orphaned_events"], {})
+        self.assertEqual(m["found_outside_list"]["orphans"], [80])
+
+    def test_unreadable_orphan_is_recorded_and_the_run_continues(self):
+        t = self.filler()
+        m, _ = run_repo(FakeRepo(t, [(9002, 99, self.W + 300, "comment on a deleted thread")]), self.W)
+        self.assertEqual(m["found_outside_list"]["orphan_fetch_failed"], [99])
+        self.assertEqual(m["orphaned_events"], {"99": 1})
+
+    def test_lookback_zero_disables_it(self):
+        t = self.filler()
+        t[70] = {"updated": self.W + 900, "key": self.W - 5 * DAY, "state": "closed",
+                 "closed": self.W - 5 * DAY}
+        m, _ = run_repo(FakeRepo(t), self.W, ["--lookback", "0d"])
+        self.assertEqual(m["found_outside_list"]["lookback"], [])
+        self.assertEqual(m["lookback_days"], 0)
+
+
+class CursorHold(unittest.TestCase):
+    """Unverified seconds before the window (from the lookback read) are reported, not
+    held; seconds inside the window still hold the cursor. A clamp to >= cursor_in
+    would fail the first case (cursor_out frozen at cursor_in)."""
+
+    W = 5 * DAY
+
+    def test_pre_cursor_second_is_reported_not_held(self):
+        pre = at(self.W - 3 * DAY)
+        m, _ = run_repo(FakeRepo({1: {"updated": self.W + 10}}), self.W, preload_unverified=[pre])
+        self.assertGreater(w.ts(m["cursor_out"]), w.ts(m["cursor_in"]) + dt.timedelta(days=1))
+        self.assertEqual(m["unverified_seconds"], [])
+        self.assertEqual(m["pre_cursor_unverified_seconds"], [pre])
+
+    def test_in_window_second_still_holds(self):
+        inside = at(self.W + 50)
+        m, _ = run_repo(FakeRepo({1: {"updated": self.W + 10}}), self.W, preload_unverified=[inside])
+        self.assertEqual(m["unverified_seconds"], [inside])
+        self.assertEqual(m["cursor_out"], at(self.W + 49))
+
+
 class Cli(unittest.TestCase):
     def run_main(self, *argv):
         import contextlib, io, sys
@@ -247,6 +416,10 @@ class Cli(unittest.TestCase):
             return cm.exception.code
         finally:
             sys.argv = old
+
+    def test_bad_lookback_is_a_usage_error(self):
+        for lb in ("14", "2w", "-1d", "99999d"):
+            self.assertEqual(self.run_main("o/r", "--since", "1d", "--out", "x", "--lookback", lb), 2, lb)
 
     def test_bad_repo_and_since_are_usage_errors(self):
         self.assertEqual(self.run_main("norepo", "--since", "1d", "--out", "x"), 2)

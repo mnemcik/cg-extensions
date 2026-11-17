@@ -100,12 +100,21 @@ def gh_page(path: str) -> list:
     return json.loads(run_gh(["api", path]))
 
 
+def gh_get_optional(path: str):
+    """One REST GET that may fail (a deleted, transferred or hidden thread): returns the
+    object, or None, instead of ending the run."""
+    try:
+        return json.loads(run_gh(["api", path]))
+    except SystemExit:
+        return None
+
+
 STATS = {"keyset_requests": 0, "offset_fallbacks": 0, "stalled_seconds": [], "unverified_seconds": []}
 FALLBACK_READS = 5  # max offset reads of one stalled second before giving up
 LAG_TOLERANCE = 10  # out-of-place items tolerated per page (capped at half the page)
 
 
-def gh_since_keyset(path: str, since: dt.datetime) -> list:
+def gh_since_keyset(path: str, since: dt.datetime, until: dt.datetime | None = None) -> list:
     """Everything in `path` updated at or after `since`, read by keyset rather than page number.
 
     Page-number paging is an offset into a live list: an item deleted or transferred
@@ -148,6 +157,10 @@ def gh_since_keyset(path: str, since: dt.datetime) -> list:
         return added
 
     while True:
+        # `until`: stop once the cursor reaches it (the lookback read stops at the
+        # window's start, where the normal read takes over).
+        if until is not None and cur >= until:
+            return items
         q = f"{path}{sep}sort=updated&direction=asc&per_page={PAGE}&since={iso(cur)}"
         page = gh_page(q)
         STATS["keyset_requests"] += 1
@@ -279,6 +292,8 @@ def main() -> int:
     ap.add_argument("--since", required=True, help="ISO time, unix epoch, or Nd")
     ap.add_argument("--out", required=True)
     ap.add_argument("--count-only", action="store_true", help="fetch issues/PRs only, print counts")
+    ap.add_argument("--lookback", default="14d",
+                    help="Nd: also read the issue list from this far before --since (default 14d)")
     a = ap.parse_args()
 
     # GitHub owners are ASCII alphanumerics and "-"; repos add "." and "_" ("." and ".."
@@ -291,6 +306,14 @@ def main() -> int:
         since = parse_since(a.since)
     except (ValueError, OverflowError, OSError):
         ap.error(f"--since must be an ISO time, a Unix epoch or Nd, got {a.since!r}")
+    lb = re.fullmatch(r"(\d{1,4})d", a.lookback)
+    if not lb:
+        ap.error(f"--lookback must be Nd (0-9999 days), got {a.lookback!r}")
+    lookback = dt.timedelta(days=int(lb.group(1)))
+    try:
+        list_since = since - lookback
+    except OverflowError:
+        ap.error(f"--lookback {a.lookback} reaches before year 1")
     # Taken before fetching, and rounded down to a whole second minus one: timestamps
     # are whole seconds and the next run keeps only updates after this cursor, so an
     # update later in the current second must still fall after it. Overlap, never a gap.
@@ -299,7 +322,43 @@ def main() -> int:
     (out / "raw").mkdir(parents=True, exist_ok=True)
     base = f"repos/{owner}/{name}"
 
+    # The issue list is sorted and filtered on an index that can lag a thread's real
+    # updated_at, so a thread updated in the window can be missing from it. Three more
+    # sources catch those (see SKILL.md, "How the fetcher selects"); each thread they
+    # add is recorded in found_outside_list. Open threads lag arbitrarily; closed ones
+    # seem to sit at about their close time; closed PRs with invisible changes show up
+    # in the pulls list sorted by updated.
     issues = [i for i in gh_since_keyset(f"{base}/issues?state=all", since) if ts(i["updated_at"]) > since]
+    by_num = {i["number"]: i for i in issues}
+    found = {"lookback": [], "open_sweep": [], "closed_pr_sweep": [], "orphans": [], "orphan_fetch_failed": []}
+
+    def add(i: dict, source: str) -> None:
+        if i["number"] not in by_num and ts(i["updated_at"]) > since:
+            by_num[i["number"]] = i
+            issues.append(i)
+            found[source].append(i["number"])
+
+    # 1. Lookback: the same list from list_since up to the window's start.
+    if lookback:
+        for i in gh_since_keyset(f"{base}/issues?state=all", list_since, until=since):
+            add(i, "lookback")
+    # 2. Open sweep: every open thread, at any lag. Read by page number on a live
+    #    list, so a thread closing mid-read can shift it by one (accepted: see SKILL.md).
+    for i in gh_paginate(f"{base}/issues?state=open&per_page={PAGE}"):
+        add(i, "open_sweep")
+    # 3. Closed-PR sweep: newest-updated first until a page is wholly older than
+    #    list_since (the margin absorbs the list's non-monotonic order).
+    n = 1
+    while True:
+        page = gh_page(f"{base}/pulls?state=closed&sort=updated&direction=desc&per_page={PAGE}&page={n}")
+        for p in page:
+            if p["number"] not in by_num and ts(p["updated_at"]) > since:
+                i = gh_get_optional(f"{base}/issues/{p['number']}")  # issue form, as the rest
+                if i:
+                    add(i, "closed_pr_sweep")
+        if len(page) < PAGE or all(ts(p["updated_at"]) < list_since for p in page):
+            break
+        n += 1
     write(out / "raw/issues.json", json.dumps(issues, indent=1))
     if a.count_only:
         prs = sum(1 for i in issues if "pull_request" in i)
@@ -310,18 +369,25 @@ def main() -> int:
                # threads a human commented on and rolls up human threads that saw only
                # label/state changes, neither of which --count-only can see.
                "signal_estimate": len(issues) - bots,
-               "new_since": sum(1 for i in issues if ts(i["created_at"]) > since)}
+               "new_since": sum(1 for i in issues if ts(i["created_at"]) > since),
+               # Threads behind orphan comments are added only by the full run.
+               "found_outside_list": {k: v for k, v in found.items() if v}}
         print(json.dumps(res, indent=1))
         return 0
 
     icomments = [c for c in gh_since_keyset(f"{base}/issues/comments", since) if ts(c["updated_at"]) > since]
     rcomments = [c for c in gh_since_keyset(f"{base}/pulls/comments", since) if ts(c["updated_at"]) > since]
-    if STATS["unverified_seconds"]:
+    # Unverified seconds before the window (from the lookback read) are reported, not
+    # held: holding them would move the cursor back by up to the lookback, and a bulk
+    # change there would freeze it.
+    pre_cursor = [s for s in STATS["unverified_seconds"] if ts(s) < since]
+    held = [s for s in STATS["unverified_seconds"] if ts(s) >= since]
+    if held:
         # Coverage of a stalled second couldn't be established: don't advance the cursor
         # past it, so the next run reads that second again.
-        hold = min(ts(s) for s in STATS["unverified_seconds"]) - dt.timedelta(seconds=1)
+        hold = min(ts(s) for s in held) - dt.timedelta(seconds=1)
         cursor_out = min(cursor_out, hold)
-        print(f"warning: coverage unverified for {STATS['unverified_seconds']}; "
+        print(f"warning: coverage unverified for {held}; "
               f"cursor_out held at {iso(cursor_out)}", file=sys.stderr)
     releases = fetch_releases(base, since)
     discussions = fetch_discussions(owner, name, since)
@@ -340,6 +406,17 @@ def main() -> int:
         n = int(c["pull_request_url"].rsplit("/", 1)[1])
         where = f"review comment on `{c.get('path')}`" + edited(c)
         events[n].append((c["created_at"], login(c["user"]), where, c["body"], is_bot(c["user"])))
+
+    # 4. Orphans: a comment whose thread isn't in the set. Fetch the thread, so its
+    #    comments are narrated rather than only counted; a failed read is recorded.
+    for n in sorted(set(events) - set(by_num)):
+        i = gh_get_optional(f"{base}/issues/{n}")
+        if i:
+            by_num[n] = i
+            issues.append(i)
+            found["orphans"].append(n)
+        else:
+            found["orphan_fetch_failed"].append(n)
 
     # Reviews have no `since` filter, so they cost one call per PR. Fetch them for PRs a
     # human is involved in (human author or human comment) and for bot PRs merged or
@@ -365,9 +442,8 @@ def main() -> int:
                        ("releases", releases), ("discussions", discussions), ("reviews", reviews)]:
         write(out / f"raw/{fname}.json", json.dumps(obj, indent=1))
 
-    by_num = {i["number"]: i for i in issues}
-    # Comments whose thread isn't in the issues list (a fetch race; the next run's
-    # overlap catches it) are counted rather than dropped silently.
+    write(out / "raw/issues.json", json.dumps(issues, indent=1))
+    # Comments whose thread couldn't be read even by number are counted, not dropped.
     orphans = {n: len(v) for n, v in events.items() if n not in by_num}
 
     signal, mechanical = [], []
@@ -492,7 +568,10 @@ def main() -> int:
          f"- Comments: {len(icomments)} issue/PR, {len(rcomments)} review-line, "
          f"{sum(map(len, reviews.values()))} reviews (bot comments are counted here, not narrated)",
          f"- Signal threads (in chunks): {len(signal)} · rolled-up threads: {len(mechanical)}",
-         f"- Orphaned comment events (thread not in the issues list): {sum(orphans.values())}\n",
+         "- Threads the issue list left out, found by: " + (", ".join(
+             f"{k.replace('_', ' ')} {len(v)} (#" + ", #".join(map(str, v)) + ")"
+             for k, v in found.items() if v) or "none"),
+         f"- Orphaned comment events (thread not readable even by number): {sum(orphans.values())}\n",
          "## Releases\n"]
     s += [f"- **{r['tag_name']}** ({r['published_at'][:10]}){' prerelease' if r['prerelease'] else ''}: "
           f"{r['html_url']}" for r in sorted(releases, key=lambda r: r["published_at"])] or ["- none"]
@@ -511,7 +590,9 @@ def main() -> int:
         "review_calls": review_calls,
         "orphaned_events": orphans,
         "keyset_requests": STATS["keyset_requests"], "offset_fallbacks": STATS["offset_fallbacks"],
-        "stalled_seconds": STATS["stalled_seconds"], "unverified_seconds": STATS["unverified_seconds"],
+        "stalled_seconds": STATS["stalled_seconds"], "unverified_seconds": held,
+        "pre_cursor_unverified_seconds": pre_cursor,
+        "lookback_days": lookback.days, "found_outside_list": found,
         "releases": [r["tag_name"] for r in releases], "merged_prs": len(merged),
         "chunks": chunk_index, "out": str(out.resolve()),
     }
