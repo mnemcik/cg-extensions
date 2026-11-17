@@ -46,7 +46,7 @@ python3 "$(git rev-parse --show-toplevel)/.claude/skills/github-digest/gh-repo-w
 python3 "$(git rev-parse --show-toplevel)/.claude/skills/github-digest/gh-repo-watch.py" OWNER/REPO --since 30d --out /tmp/x
 ```
 
-`--since` accepts an ISO time, a Unix epoch, or `Nd`. The run prints its manifest, and the next run's `--since` is `cursor_out`. The fetcher deletes any existing `chunk-*.md` in `--out` before writing, so use a scratch directory per run.
+`--since` accepts an ISO time, a Unix epoch, or `Nd`. `--lookback Nd` (default `14d`) sets how far before `--since` the issue list is also read, to catch threads GitHub's lagging index leaves out. The run prints its manifest, and the next run's `--since` is `cursor_out`. The fetcher deletes any existing `chunk-*.md` in `--out` before writing, so use a scratch directory per run.
 
 ## Requirements
 

@@ -1,7 +1,7 @@
 {
   "manifest": 1,
   "name": "github-digest",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Digest a watched GitHub repo's activity since the last digest straight from the GitHub API, no notification email needed: a skill plus a read-only fetcher, with per-repo targets and a since-cursor",
   "contributes": {
     "templates": [
