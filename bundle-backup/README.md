@@ -49,7 +49,7 @@ git config bundle-backup.keepDays 30         # optional; daily copies to keep
 git config bundle-backup.daily false         # optional; keep no daily copies (default true)
 ```
 
-**Daily copies.** Every bundle holds every branch with its full history, so daily copies add no history. They keep earlier *ref* states: a branch deleted before it was merged, or commits a rewrite dropped, once that loss has reached the latest bundle. With `bundle-backup.daily false`, only `<name>.bundle` is written, and nothing in `daily/` is created, written or deleted. Copies already there stay until you remove them. Only an explicit false turns them off. An unset value, or one git can't read as a boolean, keeps them on.
+**Daily copies.** Every bundle holds every branch with its full history, so daily copies add no history. They keep earlier *ref* states: a branch deleted before it was merged, or commits a rewrite dropped, once that loss has reached the latest bundle. With `bundle-backup.daily false`, only `<name>.bundle` is written, and nothing in `daily/` is created, written or deleted. Copies already there stay until you remove them. Turning copies back on restarts the prune, and its first run deletes every leftover copy older than `keepDays` at once, so remove them first. Only an explicit false turns them off. An unset value, or one git can't read as a boolean, keeps them on.
 
 Under Google Drive for desktop on macOS, every daily copy pruned after `keepDays` also lands in the macOS Trash (and the Drive trash), about one a day once copies pass `keepDays`. Turn daily copies off to avoid it. Remove leftover copies through the Drive web UI rather than Finder or `rm`, which send them to the macOS Trash too.
 
@@ -78,6 +78,7 @@ Uncommitted changes, git-ignored files, older stashes and local git config (`.gi
 - an unset destination
 - a restore that checks every branch and commit came back
 - daily copies, and pruning of old ones
+- daily copies off: the latest bundle written, nothing in `daily/` created, written or deleted; an unreadable value keeps copies on
 - a burst of concurrent runs
 - a stale lock left by a dead process
 - an unwritable destination
