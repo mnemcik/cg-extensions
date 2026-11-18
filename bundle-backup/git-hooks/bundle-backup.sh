@@ -7,7 +7,7 @@
 #
 #   git config bundle-backup.dest <folder>      # required, absolute (~ ok); unset = do nothing
 #   git config bundle-backup.name <name>        # default: the main worktree's dir name
-#   git config bundle-backup.daily false        # no daily copies; default true
+#   git config bundle-backup.daily false        # no daily copies (git booleans); default true
 #   git config bundle-backup.keepDays <n>       # daily copies kept, default 30
 #
 # Writes <dest>/<name>.bundle (always the latest) and, unless daily copies are
@@ -61,12 +61,6 @@ unset GIT_INDEX_FILE GIT_WORK_TREE GIT_PREFIX
 dest=$(git config --type=path --get bundle-backup.dest) || exit 0
 name=$(git config --get bundle-backup.name) || name=$(basename "$(git worktree list --porcelain | sed -n '1s/^worktree //p')")
 keep=$(git config --get bundle-backup.keepDays) || keep=30
-# Only an explicit false turns daily copies off; unset or a value git can't
-# read as a boolean keeps them on, so a typo never drops a copy.
-case $(git config --type=bool --get bundle-backup.daily 2>/dev/null) in
-false) daily=false ;;
-*) daily=true ;;
-esac
 status="$common/bundle-backup.status"
 log="$common/bundle-backup.log"
 lock="$common/bundle-backup.lock"
@@ -130,6 +124,15 @@ live_heads() {
 }
 
 backup() {
+	# Read on every pass, not once per process: the lock holder runs queued
+	# passes in a loop, and a pass queued after the user turned daily copies
+	# off must not write or prune one. git's false values (false, no, off, 0,
+	# an empty value) turn them off; unset, a true value, or one git can't
+	# read as a boolean keeps them on, so a typo never drops a copy.
+	case $(git config --type=bool --get bundle-backup.daily 2>/dev/null) in
+	false) daily=false ;;
+	*) daily=true ;;
+	esac
 	case "$dest" in
 	/*) ;;
 	*)

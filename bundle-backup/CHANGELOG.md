@@ -2,7 +2,7 @@
 
 ## 0.3.0
 
-- **Added:** `git config bundle-backup.daily false` turns daily copies off. Only `<name>.bundle` is written, and nothing in `daily/` is created, written or deleted, so with Google Drive for desktop on macOS no pruned copy lands in the macOS Trash any more. Only an explicit false turns them off; unset or unreadable values keep them on, so existing setups don't change. Copies already in `daily/` stay until removed by hand. The README explains what daily copies protect against, and how to remove leftovers without the Trash.
+- **Added:** `git config bundle-backup.daily false` turns daily copies off. Only `<name>.bundle` is written, and nothing in `daily/` is created, written or deleted, so with Google Drive for desktop on macOS no pruned copy lands in the macOS Trash any more. Git's false values (`false`, `no`, `off`, `0`, an empty value) turn them off. Unset, true or unreadable values keep them on, so existing setups don't change. The setting is read on every backup pass. Copies already in `daily/` stay until removed by hand. The README explains what daily copies protect against, and how to remove leftovers without the Trash.
 
 ## 0.2.1
 
