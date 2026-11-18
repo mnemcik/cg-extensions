@@ -26,6 +26,18 @@ newrepo() {
 	done
 }
 
+# wait_backup <repo>: wait until the status records a backup of the current
+# HEAD, then for the runs to finish. wait_idle alone can return before a busy
+# machine has started the background job.
+wait_backup() {
+	want=" $(git -C "$1" rev-parse --short HEAD))"
+	for _ in $(seq 1 400); do
+		grep -q "^ok .*$want\$" "$1/.git/bundle-backup.status" 2>/dev/null && break
+		sleep 0.05
+	done
+	wait_idle "$1"
+}
+
 # wait_idle <repo>: wait for background runs to finish (lock gone, no request).
 wait_idle() {
 	for _ in $(seq 1 200); do
@@ -324,7 +336,7 @@ mkdir "$d"
 git -C "$r" config bundle-backup.dest "$d"
 git -C "$r" config bundle-backup.daily false
 git -C "$r" commit -q --allow-empty -m two
-wait_idle "$r"
+wait_backup "$r"
 if [ -f "$d/r8.bundle" ] && grep -q '^ok ' "$r/.git/bundle-backup.status" && [ ! -e "$d/daily" ]; then pass "daily off: latest written, no daily/ created"; else fail "daily off: wrong first run: $(ls -A "$d")"; fi
 mkdir "$d/daily"
 : >"$d/daily/r8-2020-01-01.bundle"
@@ -332,7 +344,7 @@ touch -t 202001010000 "$d/daily/r8-2020-01-01.bundle"
 : >"$d/daily/.r8.x.tmp"
 touch -t 202001010000 "$d/daily/.r8.x.tmp"
 git -C "$r" commit -q --allow-empty -m three
-wait_idle "$r"
+wait_backup "$r"
 if [ "$(ls -A "$d/daily" | LC_ALL=C sort | tr '\n' ' ')" = ".r8.x.tmp r8-2020-01-01.bundle " ] &&
 	git -C "$r" bundle list-heads "$d/r8.bundle" | grep -q "^$(git -C "$r" rev-parse HEAD) refs/heads/main"; then
 	pass "daily off: daily/ untouched (no copy written, nothing pruned)"
@@ -343,7 +355,7 @@ out=$(cd "$r" && "$check")
 if [ -z "$out" ]; then pass "daily off: check silent when healthy"; else fail "daily off: check not silent: $out"; fi
 git -C "$r" config bundle-backup.daily nonsense
 git -C "$r" commit -q --allow-empty -m four
-wait_idle "$r"
+wait_backup "$r"
 if ls "$d/daily/r8-"*-*-*.bundle | grep -qv 2020-01-01; then pass "an unreadable daily value keeps copies on"; else fail "an unreadable daily value turned copies off"; fi
 
 echo
