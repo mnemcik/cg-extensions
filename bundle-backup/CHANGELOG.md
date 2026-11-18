@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.0
+
+- **Added:** `git config bundle-backup.daily false` turns daily copies off. Only `<name>.bundle` is written, and nothing in `daily/` is created, written or deleted, so with Google Drive for desktop on macOS no pruned copy lands in the macOS Trash any more. Only an explicit false turns them off; unset or unreadable values keep them on, so existing setups don't change. Copies already in `daily/` stay until removed by hand. The README explains what daily copies protect against, and how to remove leftovers without the Trash.
+
 ## 0.2.1
 
 - **Fixed:** the `SessionStart` check judged whether the backup was current by commit dates, so ref changes without a newer commit date went unnoticed: a fast-forward land whose backup didn't run, a deleted or reset branch, a new tag. It now compares the refs in the destination bundle (`git bundle list-heads`) with the live refs, read from the common git dir so a session in a linked worktree compares the same list. A file in the destination that isn't the one written, such as a version restored by the sync client, is caught the same way.
