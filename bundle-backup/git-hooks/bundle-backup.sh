@@ -7,10 +7,12 @@
 #
 #   git config bundle-backup.dest <folder>      # required, absolute (~ ok); unset = do nothing
 #   git config bundle-backup.name <name>        # default: the main worktree's dir name
+#   git config bundle-backup.daily false        # no daily copies (git booleans); default true
 #   git config bundle-backup.keepDays <n>       # daily copies kept, default 30
 #
-# Writes <dest>/<name>.bundle (always the latest) and
-# <dest>/daily/<name>-YYYY-MM-DD.bundle (the last state of each day), records
+# Writes <dest>/<name>.bundle (always the latest) and, unless daily copies are
+# off, <dest>/daily/<name>-YYYY-MM-DD.bundle (the last state of each day). With
+# daily copies off it never creates, writes or deletes anything in daily/. Records
 # the outcome in <git-common-dir>/bundle-backup.status as
 # "ok|writing|error <ISO time> <epoch> <detail>", and appends every step to
 # <git-common-dir>/bundle-backup.log.
@@ -122,6 +124,15 @@ live_heads() {
 }
 
 backup() {
+	# Read on every pass, not once per process: the lock holder runs queued
+	# passes in a loop, and a pass queued after the user turned daily copies
+	# off must not write or prune one. git's false values (false, no, off, 0,
+	# an empty value) turn them off; unset, a true value, or one git can't
+	# read as a boolean keeps them on, so a typo never drops a copy.
+	case $(git config --type=bool --get bundle-backup.daily 2>/dev/null) in
+	false) daily=false ;;
+	*) daily=true ;;
+	esac
 	case "$dest" in
 	/*) ;;
 	*)
@@ -135,7 +146,7 @@ backup() {
 		record error "destination $dest does not exist (is the sync folder mounted?)"
 		return 1
 	fi
-	if ! mkdir -p "$dest/daily" 2>/dev/null; then
+	if [ "$daily" = true ] && ! mkdir -p "$dest/daily" 2>/dev/null; then
 		record error "cannot create $dest/daily"
 		return 1
 	fi
@@ -144,7 +155,8 @@ backup() {
 	# destination.
 	find "$common" -maxdepth 1 -type f \( -name "bundle-backup.*.tmp" -o -name "bundle-backup.*.tmp.lock" \) -mmin +60 -exec rm -f {} + 2>/dev/null
 	find "$common" -maxdepth 1 -type d -name "bundle-backup.check.*" -mmin +60 -exec rm -rf {} + 2>/dev/null
-	find "$dest" "$dest/daily" -maxdepth 1 -type f -name ".$name.*.tmp" -mmin +60 -exec rm -f {} + 2>/dev/null
+	find "$dest" -maxdepth 1 -type f -name ".$name.*.tmp" -mmin +60 -exec rm -f {} + 2>/dev/null
+	[ "$daily" = true ] && find "$dest/daily" -maxdepth 1 -type f -name ".$name.*.tmp" -mmin +60 -exec rm -f {} + 2>/dev/null
 	# Build and check in the git dir, outside the synced folder, then write
 	# into the destination in place. That write is not atomic; see put.
 	if ! out=$(git bundle create "$tmp" --all 2>&1); then
@@ -166,7 +178,7 @@ backup() {
 		return 1
 	fi
 	day="$dest/daily/$name-$(date +%Y-%m-%d).bundle"
-	if ! put "$tmp" "$day"; then
+	if [ "$daily" = true ] && ! put "$tmp" "$day"; then
 		rm -f "$tmp"
 		record error "latest bundle written, but the daily copy $day failed"
 		return 1
@@ -181,7 +193,9 @@ backup() {
 	fi
 	size=$(wc -c <"$tmp" | tr -d ' ')
 	rm -f "$tmp"
-	find "$dest/daily" -maxdepth 1 -type f -name "$name-[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9].bundle" -mtime +"$keep" -exec rm -f {} + 2>/dev/null
+	# Under Google Drive for desktop on macOS, each copy deleted here also lands
+	# in the macOS Trash; bundle-backup.daily false avoids the deletes.
+	[ "$daily" = true ] && find "$dest/daily" -maxdepth 1 -type f -name "$name-[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9].bundle" -mtime +"$keep" -exec rm -f {} + 2>/dev/null
 	record ok "$dest/$name.bundle ($size bytes, $(git rev-parse --short HEAD 2>/dev/null))"
 }
 

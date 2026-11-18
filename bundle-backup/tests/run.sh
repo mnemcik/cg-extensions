@@ -26,6 +26,21 @@ newrepo() {
 	done
 }
 
+# wait_backup <repo>: wait until the status records a backup of the current
+# HEAD, then for the runs to finish. wait_idle alone can return before a busy
+# machine has started the background job.
+wait_backup() {
+	want=" $(git -C "$1" rev-parse --short HEAD))"
+	for _ in $(seq 1 400); do
+		if grep -q "^ok .*$want\$" "$1/.git/bundle-backup.status" 2>/dev/null; then
+			wait_idle "$1"
+			return
+		fi
+		sleep 0.05
+	done
+	return 1
+}
+
 # wait_idle <repo>: wait for background runs to finish (lock gone, no request).
 wait_idle() {
 	for _ in $(seq 1 200); do
@@ -313,6 +328,44 @@ out=$(cd "$r" && "$check")
 n=$(grep -c " repair " "$r/.git/bundle-backup.log")
 out2=$(cd "$r" && "$check")
 if [ -z "$out$out2" ] && [ "$(grep -c " repair " "$r/.git/bundle-backup.log")" = "$n" ]; then pass "no repeated repairs once current"; else fail "check keeps repairing"; fi
+
+# 8. With bundle-backup.daily false, nothing is created, written or deleted in
+#    daily/: under Google Drive for desktop on macOS a deleted copy lands in
+#    the macOS Trash. The latest bundle is still written.
+# A failed wait stops the case: later steps would change daily/ or the config
+# while that backup may still be running.
+case8() {
+	r="$T/r8"
+	d="$T/dest8"
+	newrepo "$r"
+	mkdir "$d"
+	git -C "$r" config bundle-backup.dest "$d"
+	git -C "$r" config bundle-backup.daily false
+	git -C "$r" commit -q --allow-empty -m two
+	wait_backup "$r" || { fail "case 8: backup of $(git -C "$r" rev-parse --short HEAD) never finished; rest of case 8 skipped"; return; }
+	if [ -f "$d/r8.bundle" ] && grep -q '^ok ' "$r/.git/bundle-backup.status" && [ ! -e "$d/daily" ]; then pass "daily off: latest written, no daily/ created"; else fail "daily off: wrong first run: $(ls -A "$d")"; fi
+	mkdir "$d/daily"
+	: >"$d/daily/r8-2020-01-01.bundle"
+	touch -t 202001010000 "$d/daily/r8-2020-01-01.bundle"
+	: >"$d/daily/.r8.x.tmp"
+	touch -t 202001010000 "$d/daily/.r8.x.tmp"
+	git -C "$r" commit -q --allow-empty -m three
+	wait_backup "$r" || { fail "case 8: backup of $(git -C "$r" rev-parse --short HEAD) never finished; rest of case 8 skipped"; return; }
+	if [ "$(ls -A "$d/daily" | LC_ALL=C sort | tr '\n' ' ')" = ".r8.x.tmp r8-2020-01-01.bundle " ] &&
+		git -C "$r" bundle list-heads "$d/r8.bundle" | grep -q "^$(git -C "$r" rev-parse HEAD) refs/heads/main"; then
+		pass "daily off: daily/ untouched (no copy written, nothing pruned)"
+	else
+		fail "daily off: daily/ changed: $(ls -A "$d/daily")"
+	fi
+	n=$(grep -c " repair " "$r/.git/bundle-backup.log")
+	out=$(cd "$r" && "$check")
+	if [ -z "$out" ] && [ "$(grep -c " repair " "$r/.git/bundle-backup.log")" = "$n" ]; then pass "daily off: check silent and repairs nothing when healthy"; else fail "daily off: check not silent or repaired: $out"; fi
+	git -C "$r" config bundle-backup.daily nonsense
+	git -C "$r" commit -q --allow-empty -m four
+	wait_backup "$r" || { fail "case 8: backup of $(git -C "$r" rev-parse --short HEAD) never finished; rest of case 8 skipped"; return; }
+	if ls "$d/daily/r8-"*-*-*.bundle | grep -qv 2020-01-01; then pass "an unreadable daily value keeps copies on"; else fail "an unreadable daily value turned copies off"; fi
+}
+case8
 
 echo
 if [ "$fails" -eq 0 ]; then echo "all passed"; else echo "$fails failed"; exit 1; fi

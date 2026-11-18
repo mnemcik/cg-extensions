@@ -13,7 +13,7 @@ The extension contributes one script as a `post-commit`, `post-merge` and `post-
 1. Returns at once and works in the background, so commits never wait. The background job leaves the hook's checkout and environment, so removing a session worktree right after landing doesn't break it.
 2. Takes a lock in the git dir. A run that finds the lock held asks the holder to go once more, so a burst of commits from parallel sessions produces one or two bundles, not one per commit. A lock whose process is gone is taken over.
 3. Runs `git bundle create --all` to a temp file in the git dir and checks it by unpacking every object into a throwaway repository. `git bundle verify` isn't enough: it reads only the header, and passes a truncated or damaged bundle.
-4. Records `writing` in the status, writes the bundle into `<name>.bundle` and `daily/<name>-YYYY-MM-DD.bundle` in place, checks each copy against the temp file, and deletes daily copies older than `keepDays`. The daily copy keeps the last state of each day. The files are written in place, not replaced by a rename, so they keep their identity: under Google Drive for desktop on macOS, a rename over a file sends the file it replaced to the macOS Trash. The write is not atomic, which is why the status says `writing` until it's done. If the refs in the new bundle no longer match the live ones (a command that fires no hook moved a branch while the bundle was made), the run goes once more, with at most two extra passes.
+4. Records `writing` in the status, writes the bundle into `<name>.bundle` and, unless daily copies are off, `daily/<name>-YYYY-MM-DD.bundle` in place, checks each copy against the temp file, and, unless daily copies are off, deletes daily copies older than `keepDays`. The daily copy keeps the last state of each day. The files are written in place, not replaced by a rename, so they keep their identity: under Google Drive for desktop on macOS, a rename over a file sends the file it replaced to the macOS Trash. The write is not atomic, which is why the status says `writing` until it's done. If the refs in the new bundle no longer match the live ones (a command that fires no hook moved a branch while the bundle was made), the run goes once more, with at most two extra passes.
 5. Records `ok` or `error` with a timestamp in `<git-dir>/bundle-backup.status`, and appends every step (what started the run, writing, ok, error, a queued or killed run) to `<git-dir>/bundle-backup.log`. The log stays on the machine, is never synced, and is trimmed to its last 1000 lines once it passes 2000.
 
 ### Self-repair at session start
@@ -46,7 +46,14 @@ Settings are per repository, in git config, so they stay on the machine and out 
 git config bundle-backup.dest "$HOME/Library/CloudStorage/GoogleDrive-<account>/My Drive/workspace-backup"
 git config bundle-backup.name my-workspace   # optional; default: the main worktree's directory name
 git config bundle-backup.keepDays 30         # optional; daily copies to keep
+git config bundle-backup.daily false         # optional; keep no daily copies (default true)
 ```
+
+**Daily copies.** Every bundle holds every branch with its full history, so daily copies add no history. They keep earlier *ref* states: a branch deleted before it was merged, or commits a rewrite dropped, once that loss has reached the latest bundle. With `bundle-backup.daily false`, only `<name>.bundle` is written, and nothing in `daily/` is created, written or deleted. Git's false values turn daily copies off: `false`, `no`, `off`, `0`, or an empty value. An unset value, a true value, or one git can't read as a boolean keeps them on. The setting is read on every backup pass, so it applies from the next commit even while a backup is running. Copies already there stay until you remove them. Turning copies back on restarts the prune, and its first run deletes every leftover copy older than `keepDays` at once, so remove them first.
+
+With daily copies off, nothing in the destination falls back to an earlier state. The write into `<name>.bundle` isn't atomic, so a run cut short while writing leaves a broken latest bundle. Until the next successful run (the next commit, or the repair at the next session start), the only earlier state is whatever versions the sync client keeps of that file. With daily copies on, the copies of earlier days stay intact. The repository itself isn't affected either way.
+
+Under Google Drive for desktop on macOS, every daily copy pruned after `keepDays` also lands in the macOS Trash (and the Drive trash), about one a day once copies pass `keepDays`. Turn daily copies off to avoid it. Remove leftover copies through the Drive web UI rather than Finder or `rm`, which send them to the macOS Trash too.
 
 Until `bundle-backup.dest` is set, the script does nothing. The destination must be an absolute path (`~` is expanded) and must already exist. The script never creates it, so a sync folder that isn't mounted shows up as a failed backup instead of a local copy that never syncs.
 
@@ -73,6 +80,7 @@ Uncommitted changes, git-ignored files, older stashes and local git config (`.gi
 - an unset destination
 - a restore that checks every branch and commit came back
 - daily copies, and pruning of old ones
+- daily copies off: the latest bundle written, nothing in `daily/` created, written or deleted; an unreadable value keeps copies on
 - a burst of concurrent runs
 - a stale lock left by a dead process
 - an unwritable destination
