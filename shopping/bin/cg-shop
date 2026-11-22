@@ -42,7 +42,8 @@ enter_dir() {
   CDPATH='' cd -P -- "$1" 2>/dev/null && pwd -P || die "cannot enter $1 ($2)"
 }
 # root_of DIR: the top level of DIR's git work tree, or DIR when it isn't in one.
-root_of() { git -C "$1" rev-parse --show-toplevel 2>/dev/null || printf '%s\n' "$1"; }
+# GIT_DIR / GIT_WORK_TREE (set in git hooks) would point git elsewhere: ignored.
+root_of() { ( unset GIT_DIR GIT_WORK_TREE; git -C "$1" rev-parse --show-toplevel 2>/dev/null ) || printf '%s\n' "$1"; }
 # is_inside DIR ANCESTOR: DIR is ANCESTOR or below it. Compared by file identity
 # (-ef), so letter case on a case-insensitive disk and symlinks don't matter.
 is_inside() {

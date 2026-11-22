@@ -326,6 +326,10 @@ ls "$T/repo"/shopping/*-sub-item-*.md >/dev/null 2>&1 && ok || bad "workspace in
 out=$(cd "$T/ext" && CG_EXTENSION_WORKSPACE="$T/repo/sub/ws" "$SHOP" list 2>&1)
 case "$out" in *"Sub item"*) ok ;; *) bad "workspace in a subfolder: outside read misses the repo's list: $out" ;; esac
 
+# GIT_DIR / GIT_WORK_TREE (a git hook's environment) don't move the workspace's list.
+out=$(cd "$T/repo/sub/ws/proj" && GIT_DIR="$T/ext/.git" GIT_WORK_TREE="$T/ext" CG_EXTENSION_WORKSPACE="$T/repo/sub/ws" "$SHOP" add "Hook item" -s lcsc 2>&1)
+ls "$T/repo"/shopping/*-hook-item-*.md >/dev/null 2>&1 && ok || bad "GIT_DIR set: item not at the workspace's repo root: $out"
+
 # Letter case: on a case-insensitive disk (macOS default) a workspace path in other
 # case is still the same directory.
 mkdir -p "$T/CaseWs/proj"
