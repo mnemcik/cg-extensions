@@ -8,7 +8,11 @@
 # after the agent, the directory, the time and the process, in the current
 # directory, with the extension's tmux.conf when it starts that server. (tmux
 # gives a new session the PATH of the client that creates it, i.e. cg's; all
-# other variables come from the server's environment.) It runs the agent directly instead when already inside tmux,
+# other variables come from the server's environment, which is the environment
+# of the cg that started the server.) CG_WORKSPACE, which cg 2.0+ sets to the
+# session's workspace, is therefore passed to each session itself and kept out
+# of the server's environment (see below). It runs the agent directly instead
+# when already inside tmux,
 # when stdin or stdout isn't a terminal (tmux can't attach then), or without
 # tmux (with a warning), so cg start always starts the session.
 #
@@ -48,4 +52,29 @@ socket=${CG_TMUX_SOCKET:-cg}
 clean() { printf '%s' "$1" | tr -c 'A-Za-z0-9_-' '-' | cut -c1-30; }
 name="$(clean "$(basename "$1")")-$(clean "$(basename "$PWD")")-$(date +%H%M%S)-$$"
 
-exec "$tmux_bin" -L "$socket" -f "$conf" new-session -s "$name" -c "$PWD" -- "$@"
+# The session's workspace (cg 2.0+) must reach the agent, so `cg <command>` from
+# another directory is still served by this workspace. It is passed to the
+# session with -e (tmux 3.2+; older tmux: `env CG_WORKSPACE=… <agent>`), and
+# removed from tmux's own environment: a server started by this client would
+# otherwise keep it, and hand one workspace's value to every later session that
+# doesn't set its own. Unset or empty (cg 1.x): nothing is passed.
+# tmux_arg: tmux reads an argument ending in ';' as a command separator; '\;' keeps it.
+tmux_arg() { case "$1" in *';') printf '%s\\;' "${1%;}" ;; *) printf '%s' "$1" ;; esac; }
+# tmux_has_e: new-session -e exists (tmux 3.2+). An unreadable version counts as new.
+tmux_has_e() {
+  local v major minor
+  v=$("$tmux_bin" -V 2>/dev/null | sed -n 's/^[^0-9]*\([0-9][0-9]*\)\.\([0-9][0-9]*\).*/\1 \2/p')
+  [ -n "$v" ] || return 0
+  major=${v% *} minor=${v#* }
+  [ "$major" -gt 3 ] || { [ "$major" -eq 3 ] && [ "$minor" -ge 2 ]; }
+}
+ws=${CG_WORKSPACE:-} pass_ws=""
+unset CG_WORKSPACE
+if [ -n "$ws" ]; then
+  if tmux_has_e; then pass_ws=-e; else pass_ws=env; fi
+fi
+[ "$pass_ws" = env ] && set -- env "$(tmux_arg "CG_WORKSPACE=$ws")" "$@"
+set -- -c "$PWD" -- "$@"
+[ "$pass_ws" = -e ] && set -- -e "$(tmux_arg "CG_WORKSPACE=$ws")" "$@"
+
+exec "$tmux_bin" -L "$socket" -f "$conf" new-session -s "$name" "$@"

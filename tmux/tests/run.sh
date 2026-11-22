@@ -11,6 +11,9 @@ CONF="$(cd "$here/.." && pwd)/tmux.conf"
 T=$(mktemp -d "${TMPDIR:-/tmp}/cg-tmux-test.XXXXXX")
 trap 'rm -rf "$T"' EXIT
 
+# A cg 2.0+ session running this suite must not change what the launcher sees.
+unset CG_WORKSPACE
+
 pass=0 fail=0
 ok()  { pass=$((pass + 1)); }
 bad() { fail=$((fail + 1)); printf 'FAIL: %s\n' "$*" >&2; }
@@ -28,9 +31,11 @@ cat > "$T/agent" <<'A'
 for a in "$@"; do printf 'ARG[%s]\n' "$a"; done
 exit 7
 A
-# The fake tmux: records its arguments one per line, exits 0.
+# The fake tmux: answers -V with FAKE_TMUX_VERSION (default 3.4); otherwise records
+# its arguments one per line and exits 0.
 cat > "$T/tmux" <<A
 #!/bin/sh
+if [ "\$1" = -V ]; then echo "tmux \${FAKE_TMUX_VERSION:-3.4}"; exit 0; fi
 for a in "\$@"; do printf '%s\n' "\$a"; done > "$T/tmux.args"
 exit 0
 A
@@ -66,6 +71,26 @@ case "$name" in agent-my-work-space-[0-9][0-9][0-9][0-9][0-9][0-9]-[0-9]*) ok ;;
 tail_want=$(printf '%s\n' -c "$(cd "$T/my.work:space" && pwd)" -- "$T/agent" --resume "a b")
 [ "$(sed -n '8,$p' "$T/tmux.args")" = "$tail_want" ] && ok || bad "tmux present: tail args: $(sed -n '8,$p' "$T/tmux.args")"
 
+[ -z "$(grep -x -- -e "$T/tmux.args")" ] && ok || bad "CG_WORKSPACE unset: -e must not be passed: $args"
+
+# --- CG_WORKSPACE (cg 2.0+): passed into the new session with -e ---
+( cd "$T/my.work:space" && env -u TMUX CG_WORKSPACE="$T/the ws" CG_TMUX_ASSUME_TTY=1 CG_TMUX_BIN="$T/tmux" "$LAUNCH" launch -- "$T/agent" x )
+tail_want=$(printf '%s\n' -e "CG_WORKSPACE=$T/the ws" -c "$(cd "$T/my.work:space" && pwd)" -- "$T/agent" x)
+[ "$(sed -n '8,$p' "$T/tmux.args")" = "$tail_want" ] && ok || bad "CG_WORKSPACE set: tail args: $(sed -n '8,$p' "$T/tmux.args")"
+# tmux before 3.2 has no new-session -e: the agent is started through env instead
+( cd "$T/my.work:space" && env -u TMUX CG_WORKSPACE="$T/the ws" FAKE_TMUX_VERSION=3.1c CG_TMUX_ASSUME_TTY=1 CG_TMUX_BIN="$T/tmux" "$LAUNCH" launch -- "$T/agent" x )
+tail_want=$(printf '%s\n' -c "$(cd "$T/my.work:space" && pwd)" -- env "CG_WORKSPACE=$T/the ws" "$T/agent" x)
+[ "$(sed -n '8,$p' "$T/tmux.args")" = "$tail_want" ] && ok || bad "tmux 3.1: tail args: $(sed -n '8,$p' "$T/tmux.args")"
+# a version tmux doesn't print as digits (a build from master) counts as new
+( env -u TMUX CG_WORKSPACE=/w FAKE_TMUX_VERSION=master CG_TMUX_ASSUME_TTY=1 CG_TMUX_BIN="$T/tmux" "$LAUNCH" launch -- "$T/agent" )
+[ "$(sed -n 8,9p "$T/tmux.args")" = "$(printf '%s\n' -e CG_WORKSPACE=/w)" ] && ok || bad "tmux master: want -e: $(cat "$T/tmux.args")"
+# a value ending in ';' (tmux's command separator) is escaped
+( env -u TMUX "CG_WORKSPACE=/w;" CG_TMUX_ASSUME_TTY=1 CG_TMUX_BIN="$T/tmux" "$LAUNCH" launch -- "$T/agent" )
+[ "$(sed -n 9p "$T/tmux.args")" = 'CG_WORKSPACE=/w\;' ] && ok || bad "trailing ';': want it escaped: $(sed -n 9p "$T/tmux.args")"
+# set but empty: nothing to pass
+( env -u TMUX CG_WORKSPACE= CG_TMUX_ASSUME_TTY=1 CG_TMUX_BIN="$T/tmux" "$LAUNCH" launch -- "$T/agent" )
+[ -z "$(grep -x -- -e "$T/tmux.args")" ] && ok || bad "CG_WORKSPACE empty: -e must not be passed: $(cat "$T/tmux.args")"
+
 # --- two launches in the same second get different session names ---
 n1=$( (env -u TMUX CG_TMUX_ASSUME_TTY=1 CG_TMUX_BIN="$T/tmux" "$LAUNCH" launch -- "$T/agent" >/dev/null; sed -n 7p "$T/tmux.args") )
 n2=$( (env -u TMUX CG_TMUX_ASSUME_TTY=1 CG_TMUX_BIN="$T/tmux" "$LAUNCH" launch -- "$T/agent" >/dev/null; sed -n 7p "$T/tmux.args") )
@@ -95,7 +120,45 @@ if command -v tmux >/dev/null 2>&1; then
   else
     bad "tmux.conf does not load: $(cat "$T/conf.err")"
   fi
+
+  # CG_WORKSPACE reaches the agent in a session on a server that is already
+  # running, whose environment doesn't have it (tmux copies only PATH and its
+  # update-environment list from the client). A wrapper adds -d so nothing attaches.
+  cat > "$T/tmux-detached" <<'W'
+#!/bin/sh
+for a; do shift; if [ "$a" = new-session ]; then set -- "$@" new-session -d; else set -- "$@" "$a"; fi; done
+exec tmux "$@"
+W
+  cat > "$T/agent-env" <<A
+#!/bin/sh
+printf '%s' "\${CG_WORKSPACE-unset}" > "$T/agent.ws.tmp" && mv "$T/agent.ws.tmp" "$T/agent.ws"
+A
+  chmod +x "$T/tmux-detached" "$T/agent-env"
+  for ws in "$T/ws one" ""; do
+    rm -f "$T/agent.ws"
+    if [ -n "$ws" ]; then
+      env -u TMUX CG_WORKSPACE="$ws" CG_TMUX_SOCKET="$sock" CG_TMUX_ASSUME_TTY=1 CG_TMUX_BIN="$T/tmux-detached" "$LAUNCH" launch -- "$T/agent-env" >/dev/null 2>&1
+      want=$ws
+    else
+      env -u TMUX -u CG_WORKSPACE CG_TMUX_SOCKET="$sock" CG_TMUX_ASSUME_TTY=1 CG_TMUX_BIN="$T/tmux-detached" "$LAUNCH" launch -- "$T/agent-env" >/dev/null 2>&1
+      want=unset
+    fi
+    i=0; while [ ! -e "$T/agent.ws" ] && [ $i -lt 50 ]; do sleep 0.1; i=$((i + 1)); done
+    got=$(cat "$T/agent.ws" 2>/dev/null)
+    [ "$got" = "$want" ] && ok || bad "real tmux: the agent's CG_WORKSPACE is '$got', want '$want'"
+  done
   tmux -L "$sock" kill-server 2>/dev/null
+
+  # A server started by a launch with CG_WORKSPACE keeps no copy of it: a later
+  # session without one gets none, not the first session's workspace.
+  sock2="cg-tmux-test2-$$"
+  rm -f "$T/agent.ws"
+  env -u TMUX CG_WORKSPACE="$T/first" CG_TMUX_SOCKET="$sock2" CG_TMUX_ASSUME_TTY=1 CG_TMUX_BIN="$T/tmux-detached" "$LAUNCH" launch -- sh -c "sleep 30" >/dev/null 2>&1
+  env -u TMUX -u CG_WORKSPACE CG_TMUX_SOCKET="$sock2" CG_TMUX_ASSUME_TTY=1 CG_TMUX_BIN="$T/tmux-detached" "$LAUNCH" launch -- "$T/agent-env" >/dev/null 2>&1
+  i=0; while [ ! -e "$T/agent.ws" ] && [ $i -lt 50 ]; do sleep 0.1; i=$((i + 1)); done
+  got=$(cat "$T/agent.ws" 2>/dev/null)
+  [ "$got" = unset ] && ok || bad "real tmux: a session on a server started with CG_WORKSPACE gets '$got', want 'unset'"
+  tmux -L "$sock2" kill-server 2>/dev/null
 fi
 
 printf '%d passed, %d failed\n' "$pass" "$fail"
