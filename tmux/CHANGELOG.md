@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.0
+
+- **Added:** when `CG_WORKSPACE` is set, the new tmux session gets it (`new-session -e`; on tmux before 3.2, which lacks `-e`, the agent is started as `env CG_WORKSPACE=… <agent>`). cg 2.0+ sets it to the session's workspace, so `cg <command>` typed in the agent's session is served by that workspace even from a directory outside it. A new tmux session takes only `PATH` (and tmux's `update-environment` list) from the `cg` that starts it; every other variable comes from the server, which keeps the environment of the `cg` that started it. So without `-e`, every later session would get the first session's workspace.
+- **Changed:** `CG_WORKSPACE` is kept out of the tmux server's own environment, so a session that doesn't set it has none instead of another session's. With cg 1.x the variable is unset and the tmux arguments are unchanged.
+
 ## 0.2.0
 
 - **Added:** the terminal's tab title follows the agent's title (`set-titles on`, `#T`), so `/rename` and the conversation title show instead of `cg`.
