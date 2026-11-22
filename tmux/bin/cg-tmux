@@ -68,14 +68,13 @@ tmux_has_e() {
   major=${v% *} minor=${v#* }
   [ "$major" -gt 3 ] || { [ "$major" -eq 3 ] && [ "$minor" -ge 2 ]; }
 }
-ws=${CG_WORKSPACE:-}
+ws=${CG_WORKSPACE:-} pass_ws=""
 unset CG_WORKSPACE
-if [ -n "$ws" ] && ! tmux_has_e; then
-  set -- env "$(tmux_arg "CG_WORKSPACE=$ws")" "$@"
+if [ -n "$ws" ]; then
+  if tmux_has_e; then pass_ws=-e; else pass_ws=env; fi
 fi
+[ "$pass_ws" = env ] && set -- env "$(tmux_arg "CG_WORKSPACE=$ws")" "$@"
 set -- -c "$PWD" -- "$@"
-if [ -n "$ws" ] && tmux_has_e; then
-  set -- -e "$(tmux_arg "CG_WORKSPACE=$ws")" "$@"
-fi
+[ "$pass_ws" = -e ] && set -- -e "$(tmux_arg "CG_WORKSPACE=$ws")" "$@"
 
 exec "$tmux_bin" -L "$socket" -f "$conf" new-session -s "$name" "$@"
