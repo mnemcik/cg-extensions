@@ -62,6 +62,7 @@ umask 022
 # --- usage ---
 expect "no args" 2 "$LIVE"
 contains "no args" "$err" "usage: cg live run"
+contains "usage lists --until-pane" "$err" "cg live watch [--events | --cmds] [--once] [--until-pane ID] [file]"
 expect "run without claude args" 2 "$LIVE" run only-label
 
 # --- run: result JSON on stdout, claude's exit code, args passed through ---
