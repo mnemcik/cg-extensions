@@ -9,7 +9,7 @@ Load when starting, watching or debugging a headless `claude -p` run.
 ## Commands
 
 - `cg live run <label> <claude args…>`: `claude -p --output-format stream-json --verbose <claude args…>`, with `</dev/null`, so pass the prompt as an argument (stdin doesn't reach claude). Do not pass `--output-format` yourself. stdout is the final `result` event as one JSON object (as `--output-format json`), the exit code is claude's. Read `.result`, `.session_id` (for `--resume`) and `.total_cost_usd` from it as before.
-- `cg live watch [--events | --cmds] [--once] [file]`: follow the latest run, or the given `*.events.jsonl` / `*.cmd.log`. `WATCH_LINES=40` shows more of each tool result, `WATCH_THINKING=1` shows thinking.
+- `cg live watch [--events | --cmds] [--once] [--until-pane ID] [file]`: follow the latest run, or the given `*.events.jsonl` / `*.cmd.log`. `WATCH_LINES=40` shows more of each tool result, `WATCH_THINKING=1` shows thinking.
 
 ## From another repo
 
