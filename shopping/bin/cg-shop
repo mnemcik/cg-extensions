@@ -2,16 +2,17 @@
 # cg shop — a shared shopping list for a Consigliere workspace.
 #
 # Every item is one markdown file, shopping/<id>.md at the root of the current
-# git work tree, with its fields in YAML frontmatter. A new item is a new file,
-# so parallel sessions in separate worktrees never conflict when they land; a
-# status change edits only that item's file. Views (grouped by supplier or
+# git work tree (with cg 2.0+, see init_dir for where), with its fields in YAML
+# frontmatter. A new item is a new file, so parallel sessions in separate
+# worktrees never conflict when they land; a status change edits only that
+# item's file. Views (grouped by supplier or
 # project) are computed when read, never stored.
 #
 # Portable bash 3.2+ with POSIX awk/sed/sort only (macOS and Linux, Git Bash).
 
 set -u
 
-VERSION="0.1.0"
+VERSION="0.2.0"
 STATUSES="needed ordered received cancelled"
 
 die()   { printf 'cg shop: %s\n' "$*" >&2; exit 1; }
@@ -21,11 +22,39 @@ today() {
   if [ -n "${CG_SHOP_TODAY:-}" ]; then printf '%s\n' "$CG_SHOP_TODAY"; else date +%Y-%m-%d; fi
 }
 
-# init_dir: set SHOP_DIR to the shopping/ folder of the current work tree
-# (CG_SHOP_DIR overrides). Runs once in the main shell, so a failure exits.
+# init_dir MODE: set SHOP_DIR to the shopping/ folder of the root cg shop reads
+# (MODE read) or writes (MODE write). Runs once in the main shell, so a failure
+# exits. The root, first match wins:
+#   1. CG_SHOP_DIR: the shopping folder itself (an explicit override; tests).
+#   2. CG_SESSION_WORKTREE (cg 2.0+): the session's worktree. cg sets it when it
+#      serves cg shop from the session's workspace for a directory outside it.
+#   3. CG_EXTENSION_WORKSPACE (cg 2.0+, the workspace that served cg shop) when
+#      the current directory is inside it.
+#   4. CG_EXTENSION_WORKSPACE set, the current directory outside it, no worktree:
+#      reads use that workspace; writes are refused, so they never land in its
+#      main checkout from somewhere else.
+#   5. Neither set (cg 1.x, or run directly): the current git work tree.
 SHOP_DIR=""
 init_dir() {
+  local mode=$1 ws here
   if [ -n "${CG_SHOP_DIR:-}" ]; then SHOP_DIR=$CG_SHOP_DIR; return; fi
+  if [ -n "${CG_SESSION_WORKTREE:-}" ]; then
+    [ -d "$CG_SESSION_WORKTREE" ] || die "the session's worktree $CG_SESSION_WORKTREE (CG_SESSION_WORKTREE) is not a directory"
+    SHOP_DIR="$CG_SESSION_WORKTREE/shopping"; return
+  fi
+  if [ -n "${CG_EXTENSION_WORKSPACE:-}" ]; then
+    ws=$(CDPATH='' cd -P -- "$CG_EXTENSION_WORKSPACE" 2>/dev/null && pwd -P) \
+      || die "the workspace $CG_EXTENSION_WORKSPACE (CG_EXTENSION_WORKSPACE) is not a directory"
+    here=$(pwd -P) || die "cannot read the current directory"
+    case "$ws" in
+      /) SHOP_DIR=/shopping; return ;;
+      *) case "$here" in "$ws" | "$ws"/*) SHOP_DIR="$ws/shopping"; return ;; esac ;;
+    esac
+    if [ "$mode" = read ]; then SHOP_DIR="$ws/shopping"; return; fi
+    die "$here is outside the workspace ($ws) and this session has no worktree to write to.
+  Create one with 'cg worktree create <slug>', or record the one you work in with
+  'cg session set-context --worktree <path>'; or run cg shop from inside the workspace."
+  fi
   local top
   top=$(git rev-parse --show-toplevel 2>/dev/null) || die "not inside a git work tree (run it from your workspace)"
   SHOP_DIR="$top/shopping"
@@ -370,7 +399,9 @@ cmd_help() {
 cg shop — one shared shopping list for the workspace
 
 Items are files in shopping/<id>.md at the root of the current work tree, so
-commit them with the rest of your session's work.
+commit them with the rest of your session's work. With cg 2.0+, run from a
+directory outside the workspace, cg shop writes to the session's worktree
+('cg worktree create <slug>') and refuses to write without one.
 
 Usage:
   cg shop add <what> --supplier <s> [--qty N] [--project <slug>]
@@ -397,7 +428,8 @@ EOF
 main() {
   local cmd=${1-help}; [ "$#" -gt 0 ] && shift
   case "$cmd" in
-    add|list|ls|order|receive|cancel|show) init_dir ;;
+    list|ls|show) init_dir read ;;
+    add|order|receive|cancel) init_dir write ;;
   esac
   case "$cmd" in
     add)          cmd_add "$@" ;;

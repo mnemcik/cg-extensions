@@ -19,6 +19,8 @@ Each item is a markdown file, `shopping/<id>.md` at the root of the work tree, w
 
 The id is `<added-date>-<slug-of-title>-<6 random hex digits>`. The random part is always there, so two sessions adding the same item on the same day still create different files, and lands never conflict. Item files are workspace content like any other — **stage and commit them by name** with the session's work, or they never reach `main`.
 
+With cg 2.0+, `cg shop` also works from a directory outside the workspace (another repo the session works in): it then writes to the session's worktree. Without one it refuses to write; create one with `cg worktree create <slug>` (or record the worktree in use with `cg session set-context --worktree <path>`) and commit the items there.
+
 ## Rules
 
 - **Purchases live only here.** Don't keep a buy list in a project's `todo.md`. If the project's next action depends on the parts, write one line such as *"waiting for parts — `cg shop list --project <slug>`"*, not the items.

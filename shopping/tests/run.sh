@@ -36,7 +36,7 @@ newrepo() {
 export CG_SHOP_TODAY=2026-11-13
 export GIT_AUTHOR_NAME=test GIT_AUTHOR_EMAIL=test@example.com GIT_COMMITTER_NAME=test GIT_COMMITTER_EMAIL=test@example.com
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
-unset CG_SHOP_DIR
+unset CG_SHOP_DIR CG_SESSION_WORKTREE CG_EXTENSION_WORKSPACE
 
 # ---------------------------------------------------------------- add
 newrepo
@@ -251,6 +251,88 @@ expect "both items after landing" 0 "$SHOP" list
 contains "item one landed" "Item one"
 contains "item two landed" "Item two"
 contains "same title from both landed" "lcsc (4 needed)"
+
+# ---------------------------------------------------------------- where cg shop reads and writes (cg 2.0+)
+# The root, first match wins: CG_SHOP_DIR; CG_SESSION_WORKTREE; CG_EXTENSION_WORKSPACE
+# when the current directory is inside it; CG_EXTENSION_WORKSPACE set and the directory
+# outside it: reads use it, writes are refused; neither set: the current work tree.
+newrepo
+ws=$T/ws
+"$SHOP" add "Main item" -s lcsc >/dev/null
+git add shopping && git commit -q -m main-item
+git worktree add -q -b session "$T/wt"
+mkdir -p "$T/ext" "$T/ws2" "$T/shopdir"
+(cd "$T/ext" && git init -q -b main)
+count() { ls "$1"/shopping/*.md 2>/dev/null | wc -l | tr -d ' '; }
+
+# The session's worktree wins over the current directory and the serving workspace.
+out=$(cd "$T/ext" && CG_SESSION_WORKTREE="$T/wt" CG_EXTENSION_WORKSPACE="$ws" "$SHOP" add "To worktree" -s lcsc 2>&1)
+[ $? -eq 0 ] && ok || bad "session worktree: add failed: $out"
+ls "$T/wt"/shopping/*-to-worktree-*.md >/dev/null 2>&1 && ok || bad "session worktree: item not in the worktree"
+[ "$(count "$T/ext")" -eq 0 ] && ok || bad "session worktree: item written to the current directory"
+[ "$(count "$ws")" -eq 1 ] && ok || bad "session worktree: item written to the main checkout"
+out=$(cd "$ws" && CG_SESSION_WORKTREE="$T/wt" "$SHOP" list 2>&1)
+case "$out" in *"To worktree"*) ok ;; *) bad "session worktree: list reads the worktree: $out" ;; esac
+out=$(cd "$T/ext" && CG_SESSION_WORKTREE="$T/gone" CG_EXTENSION_WORKSPACE="$ws" "$SHOP" add "Lost" -s lcsc 2>&1)
+[ $? -eq 1 ] && ok || bad "missing session worktree: want exit 1: $out"
+case "$out" in *"CG_SESSION_WORKTREE"*) ok ;; *) bad "missing session worktree: message lacks the variable: $out" ;; esac
+[ ! -e "$T/gone" ] && ok || bad "missing session worktree: it was created"
+
+# Inside the serving workspace (a subdirectory, reached through a symlink): its root.
+mkdir -p "$ws/projects/lamp" && ln -s "$ws" "$T/ws-link"
+out=$(cd "$T/ws-link/projects/lamp" && CG_EXTENSION_WORKSPACE="$ws" "$SHOP" add "Inside" -s lcsc 2>&1)
+[ $? -eq 0 ] && ok || bad "inside workspace: add failed: $out"
+ls "$ws"/shopping/*-inside-*.md >/dev/null 2>&1 && ok || bad "inside workspace: item not at the workspace root"
+out=$(cd "$ws/projects/lamp" && CG_EXTENSION_WORKSPACE="$T/ws-link" "$SHOP" add "Inside link" -s lcsc 2>&1)
+[ $? -eq 0 ] && ok || bad "inside workspace given as a symlink: add failed: $out"
+ls "$ws"/shopping/*-inside-link-*.md >/dev/null 2>&1 && ok || bad "inside workspace given as a symlink: item not at the workspace root"
+# a git repo nested in the workspace still writes to the workspace, not the nested repo
+mkdir -p "$ws/projects/nested" && (cd "$ws/projects/nested" && git init -q -b main)
+out=$(cd "$ws/projects/nested" && CG_EXTENSION_WORKSPACE="$ws" "$SHOP" add "Nested" -s lcsc 2>&1)
+ls "$ws"/shopping/*-nested-*.md >/dev/null 2>&1 && ok || bad "nested repo: item not at the workspace root: $out"
+[ "$(count "$ws/projects/nested")" -eq 0 ] && ok || bad "nested repo: item written to the nested repo"
+
+# Outside the serving workspace, no session worktree: writes are refused, reads work.
+before=$(count "$ws")
+for cmd in "add Refused -s lcsc" "order lcsc" "receive x" "cancel x"; do
+  # shellcheck disable=SC2086
+  out=$(cd "$T/ext" && CG_EXTENSION_WORKSPACE="$ws" "$SHOP" $cmd 2>&1)
+  [ $? -eq 1 ] && ok || bad "outside, $cmd: want exit 1: $out"
+  case "$out" in *"cg worktree create"*"cg session set-context --worktree"*) ok ;; *) bad "outside, $cmd: message lacks the fixes: $out" ;; esac
+done
+[ "$(count "$T/ext")" -eq 0 ] && ok || bad "outside: an item was written to the current directory"
+[ "$(count "$ws")" -eq "$before" ] && ok || bad "outside: an item was written to the workspace"
+out=$(cd "$T/ext" && CG_EXTENSION_WORKSPACE="$ws" "$SHOP" list 2>&1)
+[ $? -eq 0 ] && ok || bad "outside: list failed: $out"
+case "$out" in *"Main item"*) ok ;; *) bad "outside: list does not read the workspace: $out" ;; esac
+id=$(cd "$ws" && ls shopping | grep -- '-main-item-' | sed 's/\.md$//')
+out=$(cd "$T/ext" && CG_EXTENSION_WORKSPACE="$ws" "$SHOP" show "$id" 2>&1)
+case "$out" in *'title: "Main item"'*) ok ;; *) bad "outside: show does not read the workspace: $out" ;; esac
+# a sibling whose name starts with the workspace's is outside it
+out=$(cd "$T/ws2" && CG_EXTENSION_WORKSPACE="$ws" "$SHOP" add "Sibling" -s lcsc 2>&1)
+[ $? -eq 1 ] && ok || bad "sibling directory ws2 counts as inside ws: $out"
+# outside, not even in a git repo: still the refusal, not the "not inside a git work tree" error
+mkdir -p "$T/plain"
+out=$(cd "$T/plain" && GIT_CEILING_DIRECTORIES="$T" CG_EXTENSION_WORKSPACE="$ws" "$SHOP" add "Plain" -s lcsc 2>&1)
+case "$out" in *"cg worktree create"*) ok ;; *) bad "outside, no git: want the refusal: $out" ;; esac
+out=$(cd "$T/ext" && CG_EXTENSION_WORKSPACE="$T/no-such-ws" "$SHOP" list 2>&1)
+[ $? -eq 1 ] && ok || bad "missing workspace: want exit 1: $out"
+
+# CG_SHOP_DIR (the explicit override) wins over all of them.
+out=$(cd "$T/ext" && CG_SHOP_DIR="$T/shopdir" CG_SESSION_WORKTREE="$T/wt" CG_EXTENSION_WORKSPACE="$ws" "$SHOP" add "Override" -s lcsc 2>&1)
+[ $? -eq 0 ] && ok || bad "CG_SHOP_DIR: add failed: $out"
+ls "$T/shopdir"/*-override-*.md >/dev/null 2>&1 && ok || bad "CG_SHOP_DIR: item not in CG_SHOP_DIR"
+out=$(cd "$T/ext" && CG_SHOP_DIR="$T/shopdir" CG_EXTENSION_WORKSPACE="$ws" "$SHOP" add "Override two" -s lcsc 2>&1)
+[ $? -eq 0 ] && ok || bad "CG_SHOP_DIR outside the workspace: add refused: $out"
+
+# Neither set (cg 1.x): the current work tree, as before.
+out=$(cd "$T/ext" && "$SHOP" add "Here" -s lcsc 2>&1)
+[ $? -eq 0 ] && ok || bad "no cg variables: add failed: $out"
+[ "$(count "$T/ext")" -eq 1 ] && ok || bad "no cg variables: item not in the current work tree"
+# empty values count as unset
+out=$(cd "$T/ext" && CG_SESSION_WORKTREE= CG_EXTENSION_WORKSPACE= "$SHOP" add "Here too" -s lcsc 2>&1)
+[ "$(count "$T/ext")" -eq 2 ] && ok || bad "empty cg variables: item not in the current work tree: $out"
+cd "$ws" || exit 1
 
 printf '%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

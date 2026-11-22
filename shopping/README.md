@@ -8,7 +8,7 @@ When each project keeps its own buy list (usually a section of its `todo.md`), n
 
 ## Mechanism
 
-Each item is one markdown file, `shopping/<id>.md` at the root of the work tree, with its fields in YAML frontmatter (`title`, `status`, `supplier`, `qty`, `project`, `part`, `mpn`, `link`, `price`, `needed_by`, and the dates and order number `cg shop` records). The id is `<date>-<slug-of-title>-<6 random hex digits>`, for example `2026-11-13-esp32-c6-module-3fa91c`; any unique prefix works on the command line.
+Each item is one markdown file, `shopping/<id>.md` at the root of the work tree ([where](#where-the-items-go)), with its fields in YAML frontmatter (`title`, `status`, `supplier`, `qty`, `project`, `part`, `mpn`, `link`, `price`, `needed_by`, and the dates and order number `cg shop` records). The id is `<date>-<slug-of-title>-<6 random hex digits>`, for example `2026-11-13-esp32-c6-module-3fa91c`; any unique prefix works on the command line.
 
 - **No conflicts between parallel sessions.** A new item is a new file with a random part in its name, and a status change edits only that item's file. Two sessions adding items in separate worktrees, even the same item on the same day, land without conflicts (the test suite checks this). A single shared list file would conflict as soon as two sessions append to it.
 - **In git, and plain text.** Items are committed like the rest of the workspace, so they travel with it, show in history, and are readable by any tool (Obsidian, an editor, `grep`).
@@ -37,6 +37,16 @@ cg shop help
 ```
 
 `cg shop` writes the files but does not commit them; commit them with the session's work.
+
+### Where the items go
+
+`cg shop` uses the `shopping/` folder of the first of these that applies:
+
+1. `CG_SHOP_DIR`, when set: that folder itself (an override, used by the tests).
+2. The session's worktree (`CG_SESSION_WORKTREE`, cg 2.0+). cg sets it when it serves `cg shop` from the session's workspace for a directory outside the workspace, so items from a session working in another repo land in the session's worktree, not the main checkout.
+3. The workspace that served the command (`CG_EXTENSION_WORKSPACE`, cg 2.0+), when the current directory is inside it.
+4. Outside that workspace with no session worktree: `list` and `show` read the workspace's list, and `add`, `order`, `receive` and `cancel` refuse, naming `cg worktree create <slug>` and `cg session set-context --worktree <path>`.
+5. Otherwise (cg 1.x, or `bin/cg-shop` run directly): the root of the current git work tree.
 
 ## Install
 
