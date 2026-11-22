@@ -8,7 +8,9 @@
 # after the agent, the directory, the time and the process, in the current
 # directory, with the extension's tmux.conf when it starts that server. (tmux
 # gives a new session the PATH of the client that creates it, i.e. cg's; all
-# other variables come from the server's environment.) It runs the agent directly instead when already inside tmux,
+# other variables come from the server's environment. So CG_WORKSPACE, which cg
+# 2.0+ sets to the session's workspace, is passed with -e when it is set.) It
+# runs the agent directly instead when already inside tmux,
 # when stdin or stdout isn't a terminal (tmux can't attach then), or without
 # tmux (with a warning), so cg start always starts the session.
 #
@@ -48,4 +50,11 @@ socket=${CG_TMUX_SOCKET:-cg}
 clean() { printf '%s' "$1" | tr -c 'A-Za-z0-9_-' '-' | cut -c1-30; }
 name="$(clean "$(basename "$1")")-$(clean "$(basename "$PWD")")-$(date +%H%M%S)-$$"
 
-exec "$tmux_bin" -L "$socket" -f "$conf" new-session -s "$name" -c "$PWD" -- "$@"
+# The session's workspace (cg 2.0+) must reach the agent, so `cg <command>`
+# from another directory is still served by this workspace. Unset (cg 1.x): no -e.
+set -- -c "$PWD" -- "$@"
+if [ -n "${CG_WORKSPACE:-}" ]; then
+  set -- -e "CG_WORKSPACE=$CG_WORKSPACE" "$@"
+fi
+
+exec "$tmux_bin" -L "$socket" -f "$conf" new-session -s "$name" "$@"
