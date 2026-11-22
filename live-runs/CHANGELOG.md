@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.1
+
+- **Docs:** the note says how to run `cg live` from a repo outside the workspace: the session must be started with `cg`, so it carries its workspace (cg 2.0+).
+- **Fixed:** the usage message lists `cg live watch --until-pane ID`.
+
 ## 0.1.0
 
 - **Added:** `cg live run <label> <claude args…>`: runs `claude -p` with `stream-json` events and every shell command's output logged live under `~/.cache/cg-live/`; prints the same result JSON as `--output-format json` and passes claude's exit code on. Inside tmux it opens the viewer as a split, once per window.
