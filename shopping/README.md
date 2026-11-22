@@ -40,13 +40,13 @@ cg shop help
 
 ### Where the items go
 
-`cg shop` uses the `shopping/` folder of the first of these that applies:
+`cg shop` uses the `shopping/` folder at the top level of the git work tree of the first of these that applies (so a workspace in a subfolder of its repo keeps the repo's one list):
 
-1. `CG_SHOP_DIR`, when set: that folder itself (an override, used by the tests).
+1. `CG_SHOP_DIR`, when set: that folder itself, used as given (an override, used by the tests).
 2. The session's worktree (`CG_SESSION_WORKTREE`, cg 2.0+). cg sets it when it serves `cg shop` from the session's workspace for a directory outside the workspace, so items from a session working in another repo land in the session's worktree, not the main checkout.
-3. The workspace that served the command (`CG_EXTENSION_WORKSPACE`, cg 2.0+), when the current directory is inside it.
+3. The workspace that served the command (`CG_EXTENSION_WORKSPACE`, cg 2.0+), when the current directory is inside it (a git repo nested in the workspace still uses the workspace's list).
 4. Outside that workspace with no session worktree: `list` and `show` read the workspace's list, and `add`, `order`, `receive` and `cancel` refuse, naming `cg worktree create <slug>` and `cg session set-context --worktree <path>`.
-5. Otherwise (cg 1.x, or `bin/cg-shop` run directly): the root of the current git work tree.
+5. Otherwise (cg 1.x, or `bin/cg-shop` run directly): the current git work tree.
 
 ## Install
 

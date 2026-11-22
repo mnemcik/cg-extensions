@@ -2,7 +2,7 @@
 
 ## 0.2.0
 
-- **Added:** with cg 2.0+, `cg shop` works from a directory outside the workspace. It picks its root in this order: `CG_SHOP_DIR` (the explicit override, unchanged); the session's worktree (`CG_SESSION_WORKTREE`); the workspace that served the command (`CG_EXTENSION_WORKSPACE`) when the current directory is inside it; the current git work tree (cg 1.x, or `cg-shop` run directly).
+- **Added:** with cg 2.0+, `cg shop` works from a directory outside the workspace. It picks its root in this order: `CG_SHOP_DIR` (the explicit override, unchanged); the session's worktree (`CG_SESSION_WORKTREE`); the workspace that served the command (`CG_EXTENSION_WORKSPACE`) when the current directory is inside it; the current git work tree (cg 1.x, or `cg-shop` run directly). Each root is taken at the top level of its git work tree, as before, so a workspace in a subfolder of its repo keeps one list. "Inside" is decided by file identity, so symlinks and letter case on a case-insensitive disk don't matter.
 - **Added:** run from outside the workspace in a session with no worktree, `cg shop add | order | receive | cancel` refuse and name the fix (`cg worktree create <slug>`, or `cg session set-context --worktree <path>`), so items never land in the workspace's main checkout from somewhere else. `cg shop list | show` read the workspace's list there.
 - With cg 1.x none of these variables is set, and `cg shop` behaves as in 0.1.0.
 

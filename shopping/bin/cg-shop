@@ -2,7 +2,7 @@
 # cg shop — a shared shopping list for a Consigliere workspace.
 #
 # Every item is one markdown file, shopping/<id>.md at the root of the current
-# git work tree (with cg 2.0+, see init_dir for where), with its fields in YAML
+# git work tree (with cg 2.0+, of the workspace's or session's; see init_dir), with its fields in YAML
 # frontmatter. A new item is a new file, so parallel sessions in separate
 # worktrees never conflict when they land; a status change edits only that
 # item's file. Views (grouped by supplier or
@@ -24,7 +24,8 @@ today() {
 
 # init_dir MODE: set SHOP_DIR to the shopping/ folder of the root cg shop reads
 # (MODE read) or writes (MODE write). Runs once in the main shell, so a failure
-# exits. The root, first match wins:
+# exits. A root is the top level of the git work tree it is in (as in 0.1.0, so
+# a workspace in a subfolder of its repo keeps one list). First match wins:
 #   1. CG_SHOP_DIR: the shopping folder itself (an explicit override; tests).
 #   2. CG_SESSION_WORKTREE (cg 2.0+): the session's worktree. cg sets it when it
 #      serves cg shop from the session's workspace for a directory outside it.
@@ -35,22 +36,36 @@ today() {
 #      main checkout from somewhere else.
 #   5. Neither set (cg 1.x, or run directly): the current git work tree.
 SHOP_DIR=""
+# enter_dir DIR VAR: DIR with symlinks resolved, or exit naming VAR.
+enter_dir() {
+  [ -d "$1" ] || die "$2 names $1, which is not a directory"
+  CDPATH='' cd -P -- "$1" 2>/dev/null && pwd -P || die "cannot enter $1 ($2)"
+}
+# root_of DIR: the top level of DIR's git work tree, or DIR when it isn't in one.
+root_of() { git -C "$1" rev-parse --show-toplevel 2>/dev/null || printf '%s\n' "$1"; }
+# is_inside DIR ANCESTOR: DIR is ANCESTOR or below it. Compared by file identity
+# (-ef), so letter case on a case-insensitive disk and symlinks don't matter.
+is_inside() {
+  local d=$1
+  while :; do
+    [ "$d" -ef "$2" ] && return 0
+    case "$d" in /|'') return 1 ;; esac
+    d=${d%/*}; [ -n "$d" ] || d=/
+  done
+}
 init_dir() {
   local mode=$1 ws here
   if [ -n "${CG_SHOP_DIR:-}" ]; then SHOP_DIR=$CG_SHOP_DIR; return; fi
   if [ -n "${CG_SESSION_WORKTREE:-}" ]; then
-    [ -d "$CG_SESSION_WORKTREE" ] || die "the session's worktree $CG_SESSION_WORKTREE (CG_SESSION_WORKTREE) is not a directory"
-    SHOP_DIR="$CG_SESSION_WORKTREE/shopping"; return
+    ws=$(enter_dir "$CG_SESSION_WORKTREE" CG_SESSION_WORKTREE) || exit 1
+    SHOP_DIR="$(root_of "$ws")/shopping"; return
   fi
   if [ -n "${CG_EXTENSION_WORKSPACE:-}" ]; then
-    ws=$(CDPATH='' cd -P -- "$CG_EXTENSION_WORKSPACE" 2>/dev/null && pwd -P) \
-      || die "the workspace $CG_EXTENSION_WORKSPACE (CG_EXTENSION_WORKSPACE) is not a directory"
+    ws=$(enter_dir "$CG_EXTENSION_WORKSPACE" CG_EXTENSION_WORKSPACE) || exit 1
     here=$(pwd -P) || die "cannot read the current directory"
-    case "$ws" in
-      /) SHOP_DIR=/shopping; return ;;
-      *) case "$here" in "$ws" | "$ws"/*) SHOP_DIR="$ws/shopping"; return ;; esac ;;
-    esac
-    if [ "$mode" = read ]; then SHOP_DIR="$ws/shopping"; return; fi
+    if is_inside "$here" "$ws" || [ "$mode" = read ]; then
+      SHOP_DIR="$(root_of "$ws")/shopping"; return
+    fi
     die "$here is outside the workspace ($ws) and this session has no worktree to write to.
   Create one with 'cg worktree create <slug>', or record the one you work in with
   'cg session set-context --worktree <path>'; or run cg shop from inside the workspace."
@@ -398,10 +413,10 @@ cmd_help() {
   cat <<'EOF'
 cg shop — one shared shopping list for the workspace
 
-Items are files in shopping/<id>.md at the root of the current work tree, so
-commit them with the rest of your session's work. With cg 2.0+, run from a
-directory outside the workspace, cg shop writes to the session's worktree
-('cg worktree create <slug>') and refuses to write without one.
+Items are files in shopping/<id>.md at the root of the current work tree (with
+cg 2.0+, the workspace's), so commit them with the rest of your session's work.
+With cg 2.0+, run from a directory outside the workspace, cg shop writes to the
+session's worktree ('cg worktree create <slug>') and refuses to write without one.
 
 Usage:
   cg shop add <what> --supplier <s> [--qty N] [--project <slug>]

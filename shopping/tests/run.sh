@@ -318,6 +318,27 @@ case "$out" in *"cg worktree create"*) ok ;; *) bad "outside, no git: want the r
 out=$(cd "$T/ext" && CG_EXTENSION_WORKSPACE="$T/no-such-ws" "$SHOP" list 2>&1)
 [ $? -eq 1 ] && ok || bad "missing workspace: want exit 1: $out"
 
+# A workspace in a subfolder of its repo keeps the repo's one list (as 0.1.0 did).
+mkdir -p "$T/repo" && (cd "$T/repo" && git init -q -b main && mkdir -p sub/ws/proj)
+out=$(cd "$T/repo/sub/ws/proj" && CG_EXTENSION_WORKSPACE="$T/repo/sub/ws" "$SHOP" add "Sub item" -s lcsc 2>&1)
+ls "$T/repo"/shopping/*-sub-item-*.md >/dev/null 2>&1 && ok || bad "workspace in a subfolder: item not at the repo root: $out"
+[ ! -e "$T/repo/sub/ws/shopping" ] && ok || bad "workspace in a subfolder: a second list was started"
+out=$(cd "$T/ext" && CG_EXTENSION_WORKSPACE="$T/repo/sub/ws" "$SHOP" list 2>&1)
+case "$out" in *"Sub item"*) ok ;; *) bad "workspace in a subfolder: outside read misses the repo's list: $out" ;; esac
+
+# Letter case: on a case-insensitive disk (macOS default) a workspace path in other
+# case is still the same directory.
+mkdir -p "$T/CaseWs/proj"
+if [ "$T/CaseWs" -ef "$T/casews" ]; then
+  out=$(cd "$T/CaseWs/proj" && CG_EXTENSION_WORKSPACE="$T/casews" "$SHOP" add "Case item" -s lcsc 2>&1)
+  [ $? -eq 0 ] && ok || bad "workspace in other letter case counts as outside: $out"
+fi
+
+# A file given as the workspace is refused with a message naming the variable.
+out=$(cd "$T/ext" && CG_EXTENSION_WORKSPACE="$T/ext/.git/HEAD" "$SHOP" list 2>&1)
+[ $? -eq 1 ] && ok || bad "workspace that is a file: want exit 1: $out"
+case "$out" in *"CG_EXTENSION_WORKSPACE"*"not a directory"*) ok ;; *) bad "workspace that is a file: message: $out" ;; esac
+
 # CG_SHOP_DIR (the explicit override) wins over all of them.
 out=$(cd "$T/ext" && CG_SHOP_DIR="$T/shopdir" CG_SESSION_WORKTREE="$T/wt" CG_EXTENSION_WORKSPACE="$ws" "$SHOP" add "Override" -s lcsc 2>&1)
 [ $? -eq 0 ] && ok || bad "CG_SHOP_DIR: add failed: $out"
@@ -331,7 +352,7 @@ out=$(cd "$T/ext" && "$SHOP" add "Here" -s lcsc 2>&1)
 [ "$(count "$T/ext")" -eq 1 ] && ok || bad "no cg variables: item not in the current work tree"
 # empty values count as unset
 out=$(cd "$T/ext" && CG_SESSION_WORKTREE= CG_EXTENSION_WORKSPACE= "$SHOP" add "Here too" -s lcsc 2>&1)
-[ "$(count "$T/ext")" -eq 2 ] && ok || bad "empty cg variables: item not in the current work tree: $out"
+ls "$T/ext"/shopping/*-here-too-*.md >/dev/null 2>&1 && ok || bad "empty cg variables: item not in the current work tree: $out"
 cd "$ws" || exit 1
 
 printf '%d passed, %d failed\n' "$pass" "$fail"
