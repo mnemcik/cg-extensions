@@ -11,6 +11,10 @@ Load when starting, watching or debugging a headless `claude -p` run.
 - `cg live run <label> <claude args…>`: `claude -p --output-format stream-json --verbose <claude args…>`, with `</dev/null`, so pass the prompt as an argument (stdin doesn't reach claude). Do not pass `--output-format` yourself. stdout is the final `result` event as one JSON object (as `--output-format json`), the exit code is claude's. Read `.result`, `.session_id` (for `--resume`) and `.total_cost_usd` from it as before.
 - `cg live watch [--events | --cmds] [--once] [file]`: follow the latest run, or the given `*.events.jsonl` / `*.cmd.log`. `WATCH_LINES=40` shows more of each tool result, `WATCH_THINKING=1` shows thinking.
 
+## From another repo
+
+`cg live` is a command of the workspace's extension, so cg finds it from the workspace. To start a run from a repo outside the workspace (a checkout the session works in), the session must be started with `cg` (or `cg start`): with cg 2.0+ the session then carries its workspace (`CG_WORKSPACE`), and `cg live run …` works from any directory. The run starts in the current directory, so `claude -p` works in that repo. With cg 1.x, or in a session started without `cg`, `cg live` is an unknown command outside the workspace.
+
 ## Files
 
 `$CG_LIVE_DIR` (default `~/.cache/cg-live/`) keeps every run: `<stamp>-<label>.events.jsonl` (one event per line, `_ts` added), `<stamp>-<label>.cmd.log` (each shell command with a header, its output, its exit code), and `latest.*` symlinks to the newest run. The stamp includes the process ID, so two runs in the same second don't collide.

@@ -34,7 +34,7 @@ need() { command -v "$1" >/dev/null 2>&1 || die "$1 is required but not on PATH"
 usage() {
   cat >&2 <<'U'
 usage: cg live run <label> <claude args…>
-       cg live watch [--events | --cmds] [--once] [file]
+       cg live watch [--events | --cmds] [--once] [--until-pane ID] [file]
 U
   exit 2
 }

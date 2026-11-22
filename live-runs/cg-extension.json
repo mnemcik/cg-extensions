@@ -1,7 +1,7 @@
 {
   "manifest": 1,
   "name": "live-runs",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Watch headless claude -p runs live: cg live run streams every agent step and the live output of every shell command to a log, cg live watch shows it (as a split next to the session inside tmux); the result JSON is the same as --output-format json",
   "contributes": {
     "claude-md-sections": [
