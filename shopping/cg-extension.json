@@ -1,7 +1,7 @@
 {
   "manifest": 1,
   "name": "shopping",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "One shared shopping list for the workspace — any project adds items, open items group by supplier so one order covers every project; one file per item, so parallel sessions never conflict (cg shop)",
   "contributes": {
     "claude-md-sections": [
