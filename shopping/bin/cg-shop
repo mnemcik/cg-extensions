@@ -12,7 +12,7 @@
 
 set -u
 
-VERSION="0.2.0"
+VERSION="0.3.0"
 STATUSES="needed ordered received cancelled"
 
 die()   { printf 'cg shop: %s\n' "$*" >&2; exit 1; }

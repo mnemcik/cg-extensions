@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.0
+
+- **Changed (breaking): requires cg 2.0.** The manifest is v2 and declares its commands (`shop`, `shop add`, `list`, `order`, `receive`, `cancel`, `show`) with `commands` instead of `subcommands`; aliases (`ls`) and `help` / `version` still reach `cg-shop` through `cg shop`. cg 1.x refuses to install it. Update cg on every machine that shares the workspace first (`cg update upgrade`, or `brew upgrade --cask cg` for a Homebrew install), then run `cg extension update` and commit.
+- `cg shop version` prints 0.3.0.
+
 ## 0.2.0
 
 - **Added:** with cg 2.0+, `cg shop` works from a directory outside the workspace. It picks its root in this order: `CG_SHOP_DIR` (the explicit override, unchanged); the session's worktree (`CG_SESSION_WORKTREE`); the workspace that served the command (`CG_EXTENSION_WORKSPACE`) when the current directory is inside it; the current git work tree (cg 1.x, or `cg-shop` run directly). Each root is taken at the top level of its git work tree, as before, so a workspace in a subfolder of its repo keeps one list. "Inside" is decided by file identity, so symlinks and letter case on a case-insensitive disk don't matter.

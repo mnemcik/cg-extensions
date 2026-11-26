@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.0
+
+- **Changed (breaking): requires cg 2.0.** The manifest is v2 and declares its commands (`live`, `live run`, `live watch`) with `commands` instead of `subcommands`; cg 1.x refuses to install it. Update cg on every machine that shares the workspace first (`cg update upgrade`, or `brew upgrade --cask cg` for a Homebrew install), then run `cg extension update` and commit.
+
 ## 0.1.1
 
 - **Docs:** the note says how to run `cg live` from a repo outside the workspace: the session must be started with `cg`, so it carries its workspace (cg 2.0+).

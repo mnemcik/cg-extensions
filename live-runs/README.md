@@ -19,7 +19,7 @@ With `claude -p --output-format json` a run shows nothing until it ends, then on
 
 | Contribution | What |
 |---|---|
-| `subcommands` | `cg live` (`bin/cg-live`, bash; `bin/cg-live-tee`, the shell prefix) |
+| `commands` | `cg live`, `cg live run`, `cg live watch` (`bin/cg-live`, bash; `bin/cg-live-tee`, the shell prefix) |
 | `claude-md-sections` | The rule: start headless runs with `cg live run`, and don't pipe their commands through `\| tail` / `\| head` |
 | `notes` | `notes/live-runs.md`: commands, files, environment variables, gotchas |
 
@@ -34,7 +34,7 @@ cg live watch --once <file>   # replay a finished run
 
 ## Requirements
 
-- cg 1.30.2 or later: older cg doesn't find a subcommand in a subfolder of this repo.
+- cg 2.0 or later (manifest v2): cg 1.x refuses to install this version.
 - Running `cg live` from a repo outside the workspace needs cg 2.0+ and a session started with `cg`, so the session carries its workspace (see the note).
 - `claude` (Claude Code) and `jq` on PATH; macOS or Linux.
 - The logs hold full transcripts and every command's output. They are private to you (the files are `600`; a directory cg live creates is `700`, an existing one keeps its mode), and nothing removes them: delete `~/.cache/cg-live/` when you no longer need them.

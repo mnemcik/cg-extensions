@@ -13,7 +13,7 @@ Load when starting, watching or debugging a headless `claude -p` run.
 
 ## From another repo
 
-`cg live` is a command of the workspace's extension, so cg finds it from the workspace. To start a run from a repo outside the workspace (a checkout the session works in), the session must be started with `cg` (or `cg start`): with cg 2.0+ the session then carries its workspace (`CG_WORKSPACE`), and `cg live run …` works from any directory. The run starts in the current directory, so `claude -p` works in that repo. With cg 1.x, or in a session started without `cg`, `cg live` is an unknown command outside the workspace.
+`cg live` is a command of the workspace's extension, so cg finds it from the workspace. To start a run from a repo outside the workspace (a checkout the session works in), the session must be started with `cg` (or `cg start`): with cg 2.0+ the session then carries its workspace (`CG_WORKSPACE`), and `cg live run …` works from any directory. The run starts in the current directory, so `claude -p` works in that repo. In a session started without `cg`, `cg live` is an unknown command outside the workspace.
 
 ## Files
 

@@ -44,7 +44,7 @@ Remove with `cg extension remove <name>`; update with `cg extension update <name
 ```text
 cg-extensions/
   <name>/
-    cg-extension.json      # manifest (schema v1)
+    cg-extension.json      # manifest (schema v1, or v2 for cg 2.0+ commands)
     fragments/ notes/ …    # contribution payloads
     README.md  CHANGELOG.md
   specs/                   # one folder per item (see Author below)
