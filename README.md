@@ -80,7 +80,7 @@ Every change starts as an issue, and the same rules apply to everyone, outside c
 ### Author
 
 - **Starts from an issue.** The PR says `Fixes #NNN` (the [PR template](.github/pull_request_template.md) has the line).
-- **Keeps the item's folder** `specs/<tracker>-<id>-<slug>/`, one per item, with `analysis.md`, `spec.md` (acceptance criteria), and `plan.md` and `tasks.md` depending on the size. It is committed with the change and kept as history. Where a repo doesn't allow the folder, the issue holds the spec.
+- **Keeps the item's folder** `specs/<tracker>-<id>-<slug>/` (for an issue in this repository, `specs/gh-<number>-<slug>/`), one per item, with `analysis.md`, `spec.md` (acceptance criteria), and `plan.md` and `tasks.md` depending on the size. It is committed with the change and kept as history. Where a repo doesn't allow the folder, the issue holds the spec.
 - **Implements only after the agreement:** one comment on the issue naming the folder, the commit of the spec and the content hashes of `spec.md` and `plan.md` ("plan: none" for an S item); a later change to either needs a new agreement. The maintainer posts it, or it is posted on the maintainer's behalf and says so.
 - **Opens the PR when the work is done:** implemented and tested, never as a draft. The description follows the PR template.
 - **Carries the PR to merge:** answers every review comment with a fix or a reply and updates the branch from `main` when it falls behind, until CI is green and every comment is answered.
@@ -120,7 +120,8 @@ The flow:
    ```
 
    A status belongs to one commit, so **a push needs a new review** at the new head, including an update from `main`. Bot PRs are exempt by who opened them, so a person's push to a bot's branch gets `success` too: don't push changes to bot branches, open a separate PR.
-4. **One approving review** is required by branch protection. Merging is the maintainer's call.
+4. **One approving review** is required by branch protection. The approval is the maintainer's: the maintainer approves, or obtains an automated reviewer's approval.
+5. **Merging is the maintainer's.** Only the maintainer, or someone acting with the maintainer's authorisation, merges.
 
 ## License
 
