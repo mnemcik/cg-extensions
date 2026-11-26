@@ -19,7 +19,8 @@ Size **S** (plan: none). Implements mnemcik/consigliere#259 spec X2 and plan cro
   subcommands keeps permission entries to one name per action.
 - **D1** Docs: each extension's README contribution table names `commands` (with the declared commands); the
   minimum-version lines become "cg 2.0 or later" (`live-runs/README.md`, `shopping/README.md`, replacing the
-  1.30.x bug note); `README.md` layout comment no longer says "schema v1" only; each CHANGELOG gets the new version
+  1.30.x bug note); `live-runs/notes/live-runs.md` drops "With cg 1.x, or" from its last sentence (0.2.0 can't be
+  installed on cg 1.x; the shopping note stays unchanged); `README.md` layout comment no longer says "schema v1" only; each CHANGELOG gets the new version
   with **Changed (breaking): requires cg 2.0** and how to update: update cg on every machine that shares the
   workspace first (`cg update upgrade`, or `brew upgrade --cask cg` for a Homebrew install), then
   `cg extension update`, then commit.
@@ -42,8 +43,8 @@ Size **S** (plan: none). Implements mnemcik/consigliere#259 spec X2 and plan cro
   - `cg extension list` shows the declared commands for both.
 - **A3** Each extension's own test suite (`<ext>/tests/run.sh`) passes unchanged.
 - **A4** On cg 1.32.1, installing either extension from this branch fails with
-  `unsupported manifest schema version 2` (expected; recorded, not fixed). Run before this machine is upgraded to
-  2.0.0 (one machine), i.e. before the released-binary half of A2.
+  `unsupported manifest schema version 2` (expected; recorded, not fixed). Run before any cg 2.0 build (the
+  `main` build for A2 included) replaces 1.32.1 on `PATH` on this machine (one machine).
 - **A5** No `subcommands` key remains in either manifest; `grep -rn subcommands live-runs shopping` finds only
   CHANGELOG history.
 
