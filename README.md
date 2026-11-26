@@ -95,7 +95,7 @@ The maintainer, or someone acting with the maintainer's authorisation, such as a
 
 ### Reviewers
 
-Anyone may review a PR, and automated reviewers comment on every PR. The author answers each review comment; the maintainer decides whether a point blocks the merge.
+Anyone may review a PR. The automated reviewer (CodeRabbit) reviews only when the maintainer asks for it. The author answers each review comment; the maintainer decides whether a point blocks the merge.
 
 ### Impact review
 
