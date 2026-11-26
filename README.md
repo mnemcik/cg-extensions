@@ -83,7 +83,7 @@ Every change starts as an issue, and the same rules apply to everyone, outside c
 - **Keeps the item's folder** `specs/<tracker>-<id>-<slug>/`, one per item, with `analysis.md`, `spec.md` (acceptance criteria), and `plan.md` and `tasks.md` depending on the size. It is committed with the change and kept as history. Where a repo doesn't allow the folder, the issue holds the spec.
 - **Implements only after the agreement:** one comment on the issue naming the folder, the commit of the spec and the content hashes of `spec.md` and `plan.md` ("plan: none" for an S item); a later change to either needs a new agreement. The maintainer posts it, or it is posted on the maintainer's behalf and says so.
 - **Opens the PR when the work is done:** implemented and tested, never as a draft. The description follows the PR template.
-- **Carries the PR to merge:** answers every review comment with a fix or a reply, and updates the branch from `main` when it falls behind, until CI is green.
+- **Carries the PR to merge:** answers every review comment with a fix or a reply and updates the branch from `main` when it falls behind, until CI is green and every comment is answered.
 
 ### Maintainer
 
