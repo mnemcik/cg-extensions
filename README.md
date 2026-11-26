@@ -75,6 +75,30 @@ Open issues in this repository and in [consigliere](https://github.com/mnemcik/c
 
 ## How a PR gets to merge
 
+Every change starts as an issue, and the same rules apply to everyone, outside contributors included. Below are the responsibilities of each role, whoever fills it. How an AI agent acts in a role is defined in the [`pr-workflow` plugin](https://github.com/mnemcik/claude-marketplace) (skills `pr-author` and `pr-intake`); it moves to the cg `pr-workflow` extension ([#45](https://github.com/mnemcik/cg-extensions/issues/45)) when that ships.
+
+### Author
+
+- **Starts from an issue.** The PR says `Fixes #NNN` (the [PR template](.github/pull_request_template.md) has the line).
+- **Keeps the item's folder** where the change needs one: `specs/<tracker>-<id>-<slug>/` in this repo, with `analysis.md`, `spec.md` (acceptance criteria), and `plan.md` and `tasks.md` depending on the size. It is committed with the change and kept as history.
+- **Implements only after the agreement:** one comment on the issue that states what was agreed. For a change with a folder, it names the folder, the commit of the spec and the content hashes of `spec.md` and `plan.md`; a later change to either needs a new agreement. The maintainer posts it, or it is posted on the maintainer's behalf and says so.
+- **Opens the PR when the work is done:** implemented, tested, CI green. Never as a draft. The description states the purpose, the approach, what changes on users' machines, and how it was tested.
+- **Carries the PR to merge:** answers every review comment with a fix or a reply, updates the branch from `main` when it falls behind, and says on the PR when a new head is ready for review.
+
+### Maintainer
+
+The maintainer, or someone acting with the maintainer's authorisation, such as an intake agent:
+
+- **Triages each issue** (see [Issues](#issues)) and sets its **size**: S (a few lines), M (one milestone) or L (several milestones, or new behaviour across components). The analysis confirms or changes it; the agreement fixes it.
+- **Agrees the approach** on the issue before implementation starts.
+- **Reviews the impact** of every PR, sets the `impact-review` check, approves and merges, as described below.
+
+### Reviewers
+
+Anyone may review a PR, and automated reviewers comment on every PR. The author answers each review comment; the maintainer decides whether a point blocks the merge.
+
+### Impact review
+
 Extensions run on users' machines, so every PR gets an **impact review** by the maintainer before it can merge, whoever opened it. PRs opened by Dependabot or Renovate are exempt. The review checks:
 
 - **No private data** in the diff, the description or the commit messages: no names of people, or of the employers, clients or customers behind a workspace, and no internal hosts or paths, ticket keys or incidents. The repository is public.
@@ -87,7 +111,7 @@ Extensions run on users' machines, so every PR gets an **impact review** by the 
 The flow:
 
 1. **The outcome comes as a PR comment:** agreed, or changes requested. A plain agree on the maintainer's own PR may come without a comment.
-2. **The PR's author carries it from there:** makes the requested changes, updates the branch from `main`, and answers every review comment until CI is green.
+2. **The author carries it from there** (see [Author](#author)) until CI is green and every review comment is answered.
 3. **The `impact-review` check** (required) is a commit status on the PR's head commit. Until it is `success`, the PR can't merge. The Impact Review workflow sets it for the bots and posts nothing for other PRs. After the review, the maintainer sets it on that commit:
 
    ```bash
@@ -95,7 +119,7 @@ The flow:
      -f state=success -f context=impact-review -f description="Impact reviewed"
    ```
 
-   A status belongs to one commit, so **a push needs a new review** at the new head, including an update from `main`. An agent running under the maintainer's account sets it only on the maintainer's go-ahead. Bot PRs are exempt by who opened them, so a person's push to a bot's branch gets `success` too: don't push changes to bot branches, open a separate PR.
+   A status belongs to one commit, so **a push needs a new review** at the new head, including an update from `main`. Bot PRs are exempt by who opened them, so a person's push to a bot's branch gets `success` too: don't push changes to bot branches, open a separate PR.
 4. **One approving review** is required by branch protection. Merging is the maintainer's call.
 
 ## License
