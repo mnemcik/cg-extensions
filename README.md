@@ -98,14 +98,6 @@ The flow:
    A status belongs to one commit, so **a push needs a new review** at the new head, including an update from `main`. An agent running under the maintainer's account sets it only on the maintainer's go-ahead. Bot PRs are exempt by who opened them, so a person's push to a bot's branch gets `success` too: don't push changes to bot branches, open a separate PR.
 4. **One approving review** is required by branch protection. Merging is the maintainer's call.
 
-### Upstream proposals
-
-A change that comes out of a workspace, such as an extension file a workspace edited or a local rule worth sharing, is an **upstream proposal**, not deliberate extension work. Opened by an agent under the maintainer's account, it looks like the maintainer's own PR, so it is also marked:
-
-- **Label `upstream-proposal`**, set when the PR is opened.
-- **Opened as a draft**, so it cannot be merged until someone marks it ready.
-- **Body from the upstream-proposal template**: `gh pr create --draft --label upstream-proposal --template upstream-proposal.md`. Its Origin and Impact sections say where the change comes from and what it changes for every workspace using the extension.
-
 ## License
 
 MIT — see [LICENSE](LICENSE).
