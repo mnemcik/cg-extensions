@@ -47,11 +47,13 @@ cg-extensions/
     cg-extension.json      # manifest (schema v1)
     fragments/ notes/ …    # contribution payloads
     README.md  CHANGELOG.md
+  specs/                   # one folder per item (see Author below)
   LICENSE                  # repo-wide (MIT)
 ```
 
-Each subdir is a complete, independently-installable extension. Because they
-share one repo, `cg extension update` tracks the default branch and reads each
+Each subdir except `specs/` is a complete, independently-installable extension;
+`specs/` holds the item folders described in [Author](#author). Because the
+extensions share one repo, `cg extension update` tracks the default branch and reads each
 extension's version from its manifest's `version` field (a whole-repo git tag
 can't identify one co-located extension's version) — so **bump the `version` in
 the subdir's `cg-extension.json`** to publish a new version.
@@ -80,10 +82,10 @@ Every change starts as an issue, and the same rules apply to everyone, outside c
 ### Author
 
 - **Starts from an issue.** The PR says `Fixes #NNN` (the [PR template](.github/pull_request_template.md) has the line).
-- **Keeps the item's folder** `specs/<tracker>-<id>-<slug>/` (for an issue in this repository, `specs/gh-<number>-<slug>/`), one per item, with `analysis.md`, `spec.md` (acceptance criteria), and `plan.md` and `tasks.md` depending on the size. It is committed with the change and kept as history. Where a repo doesn't allow the folder, the issue holds the spec.
+- **Keeps the item's folder** `specs/<tracker>-<id>-<slug>/` (for an issue in this repository, `specs/gh-<number>-<slug>/`), one per item, with `analysis.md`, `spec.md` (acceptance criteria), and `plan.md` and `tasks.md` depending on the size. It is committed with the change and kept as history.
 - **Implements only after the agreement:** one comment on the issue naming the folder, the commit of the spec and the content hashes of `spec.md` and `plan.md` ("plan: none" for an S item); a later change to either needs a new agreement. The maintainer posts it, or it is posted on the maintainer's behalf and says so.
 - **Opens the PR when the work is done:** implemented and tested, never as a draft. The description follows the PR template.
-- **Carries the PR to merge:** answers every review comment with a fix or a reply and updates the branch from `main` when it falls behind, until CI is green and every comment is answered.
+- **Carries the PR until it is ready to merge:** answers every review comment with a fix or a reply and updates the branch from `main` when it falls behind, until CI is green and every comment is answered.
 
 ### Maintainer
 
@@ -92,6 +94,8 @@ The maintainer, or someone acting with the maintainer's authorisation, such as a
 - **Triages each issue** (see [Issues](#issues)) and sets its **size**: S (a few lines), M (one milestone) or L (several milestones, or new behaviour across components). The analysis confirms or changes it; the agreement fixes it.
 - **Agrees the approach** on the issue before implementation starts.
 - **Reviews the impact** of every PR, sets the `impact-review` check, approves and merges, as described below.
+
+The author never sets `impact-review`, approves or merges its own PR, even under the maintainer's account. Acting with the maintainer's authorisation means an explicit grant from the maintainer, for one PR or a standing one the maintainer set up.
 
 ### Reviewers
 
