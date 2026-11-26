@@ -80,10 +80,10 @@ Every change starts as an issue, and the same rules apply to everyone, outside c
 ### Author
 
 - **Starts from an issue.** The PR says `Fixes #NNN` (the [PR template](.github/pull_request_template.md) has the line).
-- **Keeps the item's folder** where the change needs one: `specs/<tracker>-<id>-<slug>/` in this repo, with `analysis.md`, `spec.md` (acceptance criteria), and `plan.md` and `tasks.md` depending on the size. It is committed with the change and kept as history.
-- **Implements only after the agreement:** one comment on the issue that states what was agreed. For a change with a folder, it names the folder, the commit of the spec and the content hashes of `spec.md` and `plan.md`; a later change to either needs a new agreement. The maintainer posts it, or it is posted on the maintainer's behalf and says so.
-- **Opens the PR when the work is done:** implemented, tested, CI green. Never as a draft. The description states the purpose, the approach, what changes on users' machines, and how it was tested.
-- **Carries the PR to merge:** answers every review comment with a fix or a reply, updates the branch from `main` when it falls behind, and says on the PR when a new head is ready for review.
+- **Keeps the item's folder** `specs/<tracker>-<id>-<slug>/`, one per item, with `analysis.md`, `spec.md` (acceptance criteria), and `plan.md` and `tasks.md` depending on the size. It is committed with the change and kept as history. Where a repo doesn't allow the folder, the issue holds the spec.
+- **Implements only after the agreement:** one comment on the issue naming the folder, the commit of the spec and the content hashes of `spec.md` and `plan.md` ("plan: none" for an S item); a later change to either needs a new agreement. The maintainer posts it, or it is posted on the maintainer's behalf and says so.
+- **Opens the PR when the work is done:** implemented and tested, never as a draft. The description follows the PR template.
+- **Carries the PR to merge:** answers every review comment with a fix or a reply, and updates the branch from `main` when it falls behind, until CI is green.
 
 ### Maintainer
 
@@ -111,7 +111,7 @@ Extensions run on users' machines, so every PR gets an **impact review** by the 
 The flow:
 
 1. **The outcome comes as a PR comment:** agreed, or changes requested. A plain agree on the maintainer's own PR may come without a comment.
-2. **The author carries it from there** (see [Author](#author)) until CI is green and every review comment is answered.
+2. **The author carries it from there** (see [Author](#author)).
 3. **The `impact-review` check** (required) is a commit status on the PR's head commit. Until it is `success`, the PR can't merge. The Impact Review workflow sets it for the bots and posts nothing for other PRs. After the review, the maintainer sets it on that commit:
 
    ```bash
