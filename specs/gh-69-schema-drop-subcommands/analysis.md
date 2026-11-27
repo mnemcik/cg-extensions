@@ -48,3 +48,5 @@ contradicts the agreed X1 ("removed"); and no indexed manifest needs it. Not rec
   manifest keeps working on cg 1.x and keeps contributing no commands on cg 2.0, as today; the fix is the documented
   migration (`commands` and `"manifest": 2`, consigliere `EXTENSIONS.md`).
 - cg 1.x users: unaffected (cg doesn't read the schema).
+- Reversible: one block in one file; reverting the commit restores it. No cg release is involved, and cg-extensions CI
+  picks up either state on its next run (it fetches the schema from registry `main`).
