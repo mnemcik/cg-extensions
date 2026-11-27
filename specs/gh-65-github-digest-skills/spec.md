@@ -32,8 +32,10 @@ cg 2.0 still installs). Nothing breaks and cg 1.x users keep updates, but it lea
 **Overlap.** #31 (decided 2026-11-26, not implemented; branch `gh-31-digest-untrusted-notice` holds only its
 analysis) edits other lines of the same `SKILL.md` (the untrusted-content notice, a request section, a check step)
 and bumps github-digest to 0.2.1. #31's decision 4 already says it doesn't wait for #65 and, if #65 merges first,
-edits the moved file. The two changes don't touch the same lines; whichever merges second rebases onto the other
-(see Q4 for the version number).
+edits the moved file. The two don't touch the same `SKILL.md` lines; both add a CHANGELOG section, change the
+manifest `version` and edit the README, so whichever merges second rebases onto the other and resolves those by hand
+(see Q4 for the version number). In this spec, "the previous version" means github-digest's version on `main` when
+this PR is rebuilt on it: 0.2.0 today, 0.2.1 if #31 merges first.
 
 ## Changes
 
@@ -41,15 +43,16 @@ edits the moved file. The two changes don't touch the same lines; whichever merg
   `gh-repo-watch.py` keeps its content). `github-digest/templates/github-digest-target.md` stays where it is.
 - **M2** `github-digest/cg-extension.json`: `"manifest": 2`; the two skill `templates` entries removed;
   `"skills": [{ "src": "skills/github-digest", "executables": ["gh-repo-watch.py"] }]`; the
-  `templates/github-digest-target.md` entry unchanged; `version` 0.2.0 → **0.3.0**. No `requires` field (a v2
+  `templates/github-digest-target.md` entry unchanged; `version` (the previous version) → **0.3.0**. No `requires` field (a v2
   manifest already implies cg ≥ 2.0, as in #62).
 - **M3** `SKILL.md`:
   - the local-file block `v1`, word for word from cg's skill template (`docs/templates/extension-skill/SKILL.md` on
     consigliere `main`), right after the frontmatter;
   - the *Inputs* line on the fetcher says it is `gh-repo-watch.py` in this skill's directory, written
     `${CLAUDE_SKILL_DIR}` below (Claude Code fills it in; another tool's agent uses the skill directory's path), and
-    that cg installs it executable; the "cg installs templates without the execute bit" reason and the
-    `git rev-parse --show-toplevel` path go;
+    that cg installs it executable; the "cg installs templates without the execute bit" reason, the
+    `git rev-parse --show-toplevel` path and "That path works from any subdirectory and in worktrees" go; the
+    existing Windows sentence is replaced by the one below (not kept beside it);
   - both commands in *Process* become `"${CLAUDE_SKILL_DIR}/gh-repo-watch.py" OWNER/REPO …`, called directly; the
     Windows note stays: there, run it as `python "${CLAUDE_SKILL_DIR}/gh-repo-watch.py" …` (or `py`);
   - nothing else in the file changes (#31's lines are left to #31).
@@ -58,9 +61,13 @@ edits the moved file. The two changes don't touch the same lines; whichever merg
 - **D1** `github-digest/README.md`: the contribution table lists `skills` (`.claude/skills/github-digest/`:
   `SKILL.md` and `gh-repo-watch.py`, installed executable) and the `templates` row for the target file; a short
   *Customising* paragraph: cg manages the skill, put workspace rules in `.claude/skills/github-digest/SKILL.local.md`,
-  an edit to the skill's own files is replaced on the next update (an uncommitted one stops it); *Requirements*
-  gains "cg 2.0 or later"; the two fetcher examples call the installed script directly
-  (`.claude/skills/github-digest/gh-repo-watch.py OWNER/REPO …`); the *Limits* link points at
+  an edit to the skill's own files is replaced on the next update (an uncommitted one stops it); with
+  `skills.targets` naming `agents` the same files are under `.agents/skills/github-digest/` (the skill is written
+  for Claude Code: other tools must read `${CLAUDE_SKILL_DIR}` as the skill's directory); *Requirements* gains
+  "cg 2.0 or later", and its Claude Code line names `.claude/skills/` as the default target; the two fetcher
+  examples call the installed script directly, run from the workspace root
+  (`.claude/skills/github-digest/gh-repo-watch.py OWNER/REPO …`); the Windows line says to run it as
+  `python <path>` (or `py`), since Windows doesn't use the execute bit; the *Limits* link points at
   `skills/github-digest/SKILL.md`.
 - **D2** `github-digest/CHANGELOG.md`, `## [0.3.0] — <merge date>`, under *Changed*: **(breaking) requires cg 2.0**;
   the skill is now managed by cg (manifest v2 `skills`): updates replace it, customise through `SKILL.local.md`, the
@@ -68,7 +75,9 @@ edits the moved file. The two changes don't touch the same lines; whichever merg
   shares the workspace first (`cg update upgrade`, or `brew upgrade --cask cg`); if you edited
   `.claude/skills/github-digest/SKILL.md`, commit the edit (the update replaces a committed edit and says so; the
   old text stays in git history; it stops on an uncommitted one) and carry what you need into `SKILL.local.md`;
-  then `cg extension update github-digest` and commit.
+  then `cg extension update github-digest` and commit. One more line: the fetcher command changed, so a permission
+  rule written for the old `python3 "$(git rev-parse --show-toplevel)/…"` form no longer matches; add one for the new
+  path if you want to skip the prompt.
 - **R1** Registry (mnemcik/cg-extensions-registry, its own PR, after this one, `Fixes mnemcik/cg-extensions#65`):
   the `github-digest` entry's `latestVersion` → 0.3.0 and its description ends "(gh 2.48+, cg 2.0+)" instead of
   "(gh 2.48+)". Nothing else in the index.
@@ -82,13 +91,22 @@ edits the moved file. The two changes don't touch the same lines; whichever merg
   writes `.claude/skills/github-digest/SKILL.md` (`0644`) and `gh-repo-watch.py` (`0755`) and
   `templates/github-digest-target.md`, prints no local-file-block warning (#300 S12b), and `cg extension list` shows
   the skill.
-- **A4** #300 S40 end to end on cg 2.0.0: in a scratch workspace with 0.2.0 installed and committed (from a local
-  clone whose default branch is then moved to this branch's head, since `update` reads the default branch),
-  `cg extension update github-digest`
-  - with no edits: succeeds, no "unowned" refusal and no pending entry, the files hold the new content and modes,
-    the ledger records the skill;
-  - with a committed edit to `SKILL.md`: succeeds and says the edit was replaced (#300 S30);
-  - with an uncommitted edit: stops before writing, naming the file (#300 S31).
+- **A4** #300 S40 end to end, on the path existing users take: the old version installed by **cg 1.32.1** (the
+  release binary, downloaded to a scratch directory, not installed on `PATH`), then the update run by the released
+  **cg 2.0.0**. Source: a scratch clone of this repo installed by local path (`--path github-digest`); `update`
+  reads the source's default branch, so each step sets it with `git -C <clone> checkout -B main <commit>` and checks
+  `cg extension list` shows the expected version afterwards (an update that still sees the old version is a fail,
+  not "nothing to update"). Each case starts from a fresh workspace, committed after the install:
+  - **a** previous version, no edits → update to this branch's head: succeeds, no "unowned" refusal, no pending
+    entry, the files hold the new content and modes, the ledger records the skill, `cg extension list` shows 0.3.0;
+  - **b** previous version, committed edit to `SKILL.md` → update: succeeds and says the edit was replaced (#300
+    S30);
+  - **c** previous version, uncommitted edit → update: stops before writing, naming the file (#300 S31);
+  - **d** a pending record: 0.1.0 (`5ae23e2`) installed, committed edit to `SKILL.md`, updated to 0.2.0 (`8e59735`)
+    on cg 1.32.1 so the update leaves `SKILL.md` pending, then cg 2.0.0 and update to the head: the S30 message, and
+    `cg extension pending` is empty afterwards.
+- **A4b** On cg 1.32.1, installing from this branch fails with `unsupported manifest schema version 2` (expected,
+  as #62's A4; recorded, not fixed).
 - **A5** The installed fetcher runs directly: `.claude/skills/github-digest/gh-repo-watch.py --help` exits 0, and a
   `--count-only` run against a small public repo succeeds.
 - **A6** In Claude Code in the A3 workspace, the loaded skill shows the fetcher command with `${CLAUDE_SKILL_DIR}`
