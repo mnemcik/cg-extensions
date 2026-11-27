@@ -43,7 +43,8 @@ Analysis: [analysis.md](analysis.md).
   alternative, keeping it valid in v1 only, is in the analysis and not recommended.
 - **Q3** Add a migration hint to the schema? The validator's error ("Additional properties are not allowed
   ('subcommands' was unexpected)") doesn't say what replaced it, and is raised on `contributes`. **Proposed: a new
-  `description` on `contributes` (S2)**, where an editor shows the error. Alternatives: the sentence on the
+  `description` on `contributes` (S2)**, the object the error is raised on (an editor shows it on hover of
+  `contributes`; validators print no descriptions). Alternatives: the sentence on the
   `commands` description instead (seen only when hovering `commands`), or no text change at all.
 - **Q4** Where does this spec folder land? The registry has no `specs/` folder (its README: "the issue's agreement
   comment is the spec"), and nothing else changes in cg-extensions. **Proposed: a docs-only cg-extensions PR with
