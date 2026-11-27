@@ -33,7 +33,7 @@ The trigger is the skill's own description. The extension adds **nothing to CLAU
 
 ### Customising
 
-cg manages the skill: `cg extension update` replaces its files with the extension's version. Put your workspace's own rules in `.claude/skills/github-digest/SKILL.local.md`, which the skill reads and cg never touches. An edit to the skill's own files is replaced on the next update (the old text stays in git history); an uncommitted edit stops the update until you commit or discard it. With `skills.targets` naming `agents` in `.cg.json`, the same files are also installed under `.agents/skills/github-digest/`. The skill is written for Claude Code: another tool must read `${CLAUDE_SKILL_DIR}` in it as the skill's directory.
+cg manages the skill: `cg extension update` replaces its files with the extension's version. Put your workspace's own rules in `.claude/skills/github-digest/SKILL.local.md`, which the skill reads and cg never touches. An edit to the skill's own files is replaced on the next update (the old text stays in git history); an uncommitted edit stops the update until you commit or discard it. With `skills.targets` naming `agents` in `.cg.json`, the same files are under `.agents/skills/github-digest/` (and under `.claude/skills/github-digest/` only if `claude` is listed too; the paths below assume it is). The skill is written for Claude Code: another tool must read `${CLAUDE_SKILL_DIR}` in it as the skill's directory.
 
 ## Usage
 
