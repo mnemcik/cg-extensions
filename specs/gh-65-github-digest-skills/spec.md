@@ -96,22 +96,24 @@ this PR is rebuilt on it: 0.2.0 today, 0.2.1 if #31 merges first.
   **cg 2.0.0**. Source: a scratch clone of this repo installed by local path (`--path github-digest`); `update`
   reads the source's default branch, so each step sets it with `git -C <clone> checkout -B main <commit>` and checks
   `cg extension list` shows the expected version afterwards (an update that still sees the old version is a fail,
-  not "nothing to update"). Each case starts from a fresh workspace, committed after the install:
+  not "nothing to update"). Each case starts from a fresh git workspace created by cg 1.32.1 (`cg init`), with the
+  install (and any cg 1.32.1 update) committed; cg 2.0.0 first touches it at the update step. "Previous version" is
+  the commit of the github-digest version on `main` (`8e59735` for 0.2.0, or #31's merge commit if it lands first):
   - **a** previous version, no edits → update to this branch's head: succeeds, no "unowned" refusal, no pending
     entry, the files hold the new content and modes, the ledger records the skill, `cg extension list` shows 0.3.0;
   - **b** previous version, committed edit to `SKILL.md` → update: succeeds and says the edit was replaced (#300
     S30);
   - **c** previous version, uncommitted edit → update: stops before writing, naming the file (#300 S31);
   - **d** a pending record: 0.1.0 (`5ae23e2`) installed, committed edit to `SKILL.md`, updated to 0.2.0 (`8e59735`)
-    on cg 1.32.1 so the update leaves `SKILL.md` pending, then cg 2.0.0 and update to the head: the S30 message, and
+    on cg 1.32.1 so the update leaves `SKILL.md` pending, committed, then cg 2.0.0 and update to the head: the S30 message, and
     `cg extension pending` is empty afterwards.
-- **A4b** On cg 1.32.1, installing from this branch fails with `unsupported manifest schema version 2` (expected,
+- **A4b** On cg 1.32.1, installing from this branch (as in A3) fails with `unsupported manifest schema version 2` (expected,
   as #62's A4; recorded, not fixed).
 - **A5** The installed fetcher runs directly: `.claude/skills/github-digest/gh-repo-watch.py --help` exits 0, and a
   `--count-only` run against a small public repo succeeds.
 - **A6** In Claude Code in the A3 workspace, the loaded skill shows the fetcher command with `${CLAUDE_SKILL_DIR}`
   replaced by the skill's absolute directory (checked once by hand, or with a headless run printing that line).
-- **A7** `grep -rn "templates/skill\|show-toplevel" github-digest` finds only CHANGELOG history.
+- **A7** `grep -rn "templates/skill\|show-toplevel" github-digest` finds matches only in `CHANGELOG.md` (its history and the new entry's upgrade note).
 
 ## Merge order
 
