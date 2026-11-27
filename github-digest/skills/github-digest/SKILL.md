@@ -3,6 +3,11 @@ name: github-digest
 description: Digest a watched GitHub repo's activity since the last digest, read straight from the GitHub API (no notification email needed). Use when the user asks to "digest X", "check X updates", "what's new in X" or "catch up on X" and X has a target file in notes/github-digest-targets/, or invokes /github-digest <target>. Also use to add a new repo to watch ("watch owner/repo").
 ---
 
+<!-- cg:skill-local:start=v1 -->
+If a file named `SKILL.local.md` exists in this skill's directory, read it as well: its rules add to this skill's,
+and replace them where the two conflict.
+<!-- cg:skill-local:end=v1 -->
+
 # GitHub Digest
 
 Digest a public GitHub repo by querying its activity since a saved cursor, then write an analysis note. You don't need to watch the repo or receive notification email. The **cursor in the target file is the only state**.
@@ -12,7 +17,7 @@ Digest a public GitHub repo by querying its activity since a saved cursor, then 
 ## Inputs
 
 - **Target:** `notes/github-digest-targets/<slug>.md`, one per watched repo. It holds the repo, the **Cursor** (an ISO timestamp, the next run's `--since`), domain context for the analysis, and the Digest History table. New targets start from `templates/github-digest-target.md`.
-- **Fetcher:** `gh-repo-watch.py`, in this skill's directory. Run it through Python, since cg installs templates without the execute bit: `python3 "$(git rev-parse --show-toplevel)/.claude/skills/github-digest/gh-repo-watch.py"`. That path works from any subdirectory and in worktrees. It is read-only, needs `gh` ≥ 2.48 (authenticated) and Python 3.9+, and has no other dependencies. On Windows, use `python` or `py` if `python3` isn't on `PATH`.
+- **Fetcher:** `gh-repo-watch.py`, in this skill's directory, written `${CLAUDE_SKILL_DIR}` in the commands below. Claude Code fills that in; in another tool, use the path of this skill's directory. cg installs the fetcher executable, so call it directly. On Windows, run it as `python "${CLAUDE_SKILL_DIR}/gh-repo-watch.py" …` (or `py`). It is read-only, needs `gh` ≥ 2.48 (authenticated) and Python 3.9+, and has no other dependencies.
 
 If the user names a repo that has no target, offer to create one (see *Adding a target*), not to run without one.
 
@@ -22,7 +27,7 @@ If the user names a repo that has no target, offer to create one (see *Adding a 
 2. **Read the target file**: repo, Cursor, domain context, history. Check the history table against the `notes/<slug>-digest-*/` folders on disk, and backfill any missing row.
 3. **Size the window.** `<out>` is a scratch directory outside the repo (the session scratchpad, if there is one), because the raw corpus is input, not a note.
    ```sh
-   python3 "$(git rev-parse --show-toplevel)/.claude/skills/github-digest/gh-repo-watch.py" OWNER/REPO --since <cursor> --out <out> --count-only
+   "${CLAUDE_SKILL_DIR}/gh-repo-watch.py" OWNER/REPO --since <cursor> --out <out> --count-only
    ```
    This prints thread counts for issues and PRs only, including threads the lookback and sweeps find (see *How the fetcher selects*); threads found only through orphan comments are added by the full run. If the target has no cursor yet, ask the user for a starting window (`30d`, a date, or "from now"), and give them a `--count-only` figure for it.
 4. **Choose a strategy from the size.** Go by `signal_estimate`, the threads not authored by a bot. It is a rough figure, not a bound. The full fetch adds bot threads a human commented on, and rolls up human threads that only had label or state changes.
@@ -31,7 +36,7 @@ If the user names a repo that has no target, offer to create one (see *Adding a 
    - **Very large** (thousands of threads): offer a narrower window instead.
 5. **Fetch:**
    ```sh
-   python3 "$(git rev-parse --show-toplevel)/.claude/skills/github-digest/gh-repo-watch.py" OWNER/REPO --since <cursor> --out <out>
+   "${CLAUDE_SKILL_DIR}/gh-repo-watch.py" OWNER/REPO --since <cursor> --out <out>
    ```
    It writes the following files into `<out>`. It first **deletes any `chunk-*.md` already there**, so give each run its own `<out>` or don't keep anything there.
    - `summary.md`: counts, releases, merged PRs, and the list of rolled-up threads

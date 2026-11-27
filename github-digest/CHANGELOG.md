@@ -4,6 +4,14 @@ All notable changes to this extension are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/); the extension version lives in
 `cg-extension.json` (`version`).
 
+## [0.3.0] — 2026-11-27
+
+### Changed
+- **(breaking) Requires cg 2.0.** The manifest is v2, and the skill is a cg-managed `skills` contribution instead of two `templates` entries; cg 1.x refuses to install it. `cg extension update` now replaces the skill's files with the extension's version. Customise the skill in `.claude/skills/github-digest/SKILL.local.md`, which the skill reads and cg never touches.
+- The fetcher is installed executable, and the skill calls it directly from its own directory (`"${CLAUDE_SKILL_DIR}/gh-repo-watch.py"`) instead of through `python3` and the workspace path. On Windows it still runs through `python` or `py`.
+- **How to update:** update cg on every machine that shares the workspace first (`cg update upgrade`, or `brew upgrade --cask cg` for a Homebrew install). If you edited `.claude/skills/github-digest/SKILL.md`, commit the edit (the update replaces a committed edit and says so, and the old text stays in git history; it stops on an uncommitted one) and carry what you need into `SKILL.local.md`. Then run `cg extension update github-digest` and commit.
+- The fetcher command changed, so a permission rule written for the old `python3 "$(git rev-parse --show-toplevel)/…"` form no longer matches; add one for the new path if you want to skip the prompt.
+
 ## [0.2.0] — 2026-11-17
 
 ### Added
