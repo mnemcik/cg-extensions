@@ -96,7 +96,7 @@ this PR is rebuilt on it: 0.2.0 today, 0.2.1 if #31 merges first.
   **cg 2.0.0**. Source: a scratch clone of this repo installed by local path (`--path github-digest`); `update`
   reads the source's default branch, so each step sets it with `git -C <clone> checkout -B main <commit>` and checks
   `cg extension list` shows the expected version afterwards (an update that still sees the old version is a fail,
-  not "nothing to update"). Each case starts from a fresh git workspace created by cg 1.32.1 (`cg init`), with the
+  not "nothing to update"). Each case starts from a fresh workspace (`git init`, then cg 1.32.1's `cg init`), with the
   install (and any cg 1.32.1 update) committed; cg 2.0.0 first touches it at the update step. "Previous version" is
   the commit of the github-digest version on `main` (`8e59735` for 0.2.0, or #31's merge commit if it lands first):
   - **a** previous version, no edits → update to this branch's head: succeeds, no "unowned" refusal, no pending
