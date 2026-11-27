@@ -19,7 +19,7 @@ The extension contributes:
 
 | Contribution | What |
 |---|---|
-| `subcommands` | `cg shop` (`bin/cg-shop`, a bash script) |
+| `commands` | `cg shop`, `cg shop add`, `list`, `order`, `receive`, `cancel`, `show` (`bin/cg-shop`, a bash script) |
 | `claude-md-sections` | A short rule: purchases go in the shared list, never in a project's `todo.md` |
 | `notes` | `notes/shopping-list-workflow.md` — fields, rules, commands, putting an order together |
 | `templates` | `templates/shopping-item.md` — the item format, for writing one by hand |
@@ -56,9 +56,9 @@ cg extension install cg/shopping
 
 ## Requirements and limits
 
-- **cg later than 1.30.1.** Up to 1.30.1, cg looks for a co-located extension's subcommand at the repo root rather than under its subdir, so `cg shop` fails with `unknown command "shop"` (fixed in `mnemcik/consigliere`, `fix/subcommand-subdir`). Until then, `shopping/bin/cg-shop` can be run directly.
+- **cg 2.0 or later** (manifest v2): cg 1.x refuses to install this version. `shopping/bin/cg-shop` can still be run directly.
 - bash 3.2 or later, git, and POSIX `awk`, `sed`, `sort`. Tested on macOS (bash 3.2) and Linux (bash 5).
-- Windows: cg runs the subcommand directly, which needs a shell that can run a bash script; not tested.
+- Windows: cg runs the command's binary directly, which needs a shell that can run a bash script; not tested.
 - Not in 0.1: prices and order totals, supplier minimum-order or free-shipping thresholds, warnings for open items of a finished project.
 
 ## Tests
