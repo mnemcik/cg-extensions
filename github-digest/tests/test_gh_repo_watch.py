@@ -8,7 +8,7 @@ import re
 import sys
 import unittest
 
-SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "templates/skill/gh-repo-watch.py"
+SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "skills/github-digest/gh-repo-watch.py"
 spec = importlib.util.spec_from_file_location("gh_repo_watch", SCRIPT)
 w = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(w)

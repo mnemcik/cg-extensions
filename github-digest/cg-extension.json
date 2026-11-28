@@ -1,12 +1,13 @@
 {
-  "manifest": 1,
+  "manifest": 2,
   "name": "github-digest",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Digest a watched GitHub repo's activity since the last digest straight from the GitHub API, no notification email needed: a skill plus a read-only fetcher, with per-repo targets and a since-cursor",
   "contributes": {
+    "skills": [
+      { "src": "skills/github-digest", "executables": ["gh-repo-watch.py"] }
+    ],
     "templates": [
-      { "src": "templates/skill/SKILL.md", "dest": ".claude/skills/github-digest/SKILL.md" },
-      { "src": "templates/skill/gh-repo-watch.py", "dest": ".claude/skills/github-digest/gh-repo-watch.py" },
       { "src": "templates/github-digest-target.md", "dest": "templates/github-digest-target.md" }
     ]
   }

@@ -28,9 +28,12 @@ The trigger is the skill's own description. The extension adds **nothing to CLAU
 
 | Contribution | What |
 |---|---|
-| `templates` | `.claude/skills/github-digest/SKILL.md`: the skill (trigger, process, selection rules, gaps) |
-| `templates` | `.claude/skills/github-digest/gh-repo-watch.py`: read-only fetcher that uses `gh` and only the Python standard library |
+| `skills` | `.claude/skills/github-digest/`: `SKILL.md`, the skill (trigger, process, selection rules, gaps), and `gh-repo-watch.py`, a read-only fetcher that uses `gh` and only the Python standard library, installed executable |
 | `templates` | `templates/github-digest-target.md`: the per-repo target format |
+
+### Customising
+
+cg manages the skill: `cg extension update` replaces its files with the extension's version. Put your workspace's own rules in `.claude/skills/github-digest/SKILL.local.md`, which the skill reads and cg never touches. An edit to the skill's own files is replaced on the next update (the old text stays in git history); an uncommitted edit stops the update until you commit or discard it. With `skills.targets` naming `agents` in `.cg.json`, the same files are under `.agents/skills/github-digest/` (and under `.claude/skills/github-digest/` only if `claude` is listed too; the paths below assume it is). The skill is written for Claude Code: another tool must read `${CLAUDE_SKILL_DIR}` in it as the skill's directory.
 
 ## Usage
 
@@ -39,21 +42,22 @@ watch gastownhall/gascity          → creates notes/github-digest-targets/gasci
 digest gascity                     → or "check gascity updates", or /github-digest gascity
 ```
 
-The fetcher on its own:
+The fetcher on its own, from the workspace root:
 
 ```sh
-python3 "$(git rev-parse --show-toplevel)/.claude/skills/github-digest/gh-repo-watch.py" OWNER/REPO --since 2026-11-13T00:00:00Z --out /tmp/x --count-only
-python3 "$(git rev-parse --show-toplevel)/.claude/skills/github-digest/gh-repo-watch.py" OWNER/REPO --since 30d --out /tmp/x
+.claude/skills/github-digest/gh-repo-watch.py OWNER/REPO --since 2026-11-13T00:00:00Z --out /tmp/x --count-only
+.claude/skills/github-digest/gh-repo-watch.py OWNER/REPO --since 30d --out /tmp/x
 ```
 
 `--since` accepts an ISO time, a Unix epoch, or `Nd`. `--lookback Nd` (default `14d`) sets how far before `--since` the issue list is also read, to catch threads GitHub's lagging index leaves out. The run prints its manifest, and the next run's `--since` is `cursor_out`. The fetcher deletes any existing `chunk-*.md` in `--out` before writing, so use a scratch directory per run.
 
 ## Requirements
 
-- Claude Code: the extension ships a Claude Code skill under `.claude/skills/`.
+- cg 2.0 or later.
+- Claude Code: the extension ships a Claude Code skill, installed under `.claude/skills/` by default.
 - `gh` 2.48 or later (for `gh api --slurp`), authenticated. Public repos work with any account.
 - Python 3.9+, standard library only.
-- On Windows, call the fetcher with `python` or `py` if `python3` isn't on `PATH`. All I/O is explicit UTF-8.
+- On Windows, run the fetcher as `python <path>` (or `py <path>`), since Windows doesn't use the execute bit. All I/O is explicit UTF-8.
 
 ## Limits
 
@@ -61,7 +65,7 @@ python3 "$(git rev-parse --show-toplevel)/.claude/skills/github-digest/gh-repo-w
 - **Some activity is not covered:** reactions, project-board moves, and timeline events such as labelled or assigned.
 - **Discussions are read only partly:** the last 50 comments, with up to 20 replies each. Comment edits that don't bump the discussion's `updatedAt` are missed.
 
-This is a summary. The full list, including the stalled-second and open-bot-PR cases, is under **Not covered** in [`templates/skill/SKILL.md`](templates/skill/SKILL.md).
+This is a summary. The full list, including the stalled-second and open-bot-PR cases, is under **Not covered** in [`skills/github-digest/SKILL.md`](skills/github-digest/SKILL.md).
 
 ## Coming from `gmail-digest`
 
