@@ -4,7 +4,7 @@ All notable changes to this extension are documented here. Format follows
 [Keep a Changelog](https://keepachangelog.com/); the extension version lives in
 `cg-extension.json` (`version`).
 
-## [0.3.0] — 2026-11-27
+## [0.3.0] — 2026-11-28
 
 ### Changed
 - **(breaking) Requires cg 2.0.** The manifest is v2, and the skill is a cg-managed `skills` contribution instead of two `templates` entries; cg 1.x refuses to install it. `cg extension update` now replaces the skill's files with the extension's version. Customise the skill in `.claude/skills/github-digest/SKILL.local.md`, which the skill reads and cg never touches.
